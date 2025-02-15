@@ -7,6 +7,6 @@ It also contains an ESP8266 WIFI SoC with 2MB of external Flash, running AT firm
 
 The modem is a Quectel BG95-M3 LTE MODEM with GPS. Both antennas are fitted and the usb of the modem is likely exposed to debug pads.
 
-The other sensors are 2 Acceleration Sensors, a Light Sensor net to the push button(that will allow the device to wake up from a low power state), a Temperature Sensor and Pressure sensor and a red and green led.
+The other sensors are 2 Acceleration Sensors(LIS3DH), a Light Sensor(VEML6035) next to the push button(that will allow the device to wake up from a low power state), a Temperature Sensor and Pressure sensor and a red and green led.
 
 The full schematic of the device will still need to be reversed and the sensors need to be properly identifyed. PRs are welcome. 
