@@ -1,6 +1,9 @@
 # HGD4_reversed
 Information about the LOCO Track Primary HGD4 GPS tracker
 
+![pinout](https://github.com/jonasniesner/HGD4_reversed/blob/main/pinout.webp?raw=true)
+
+
 The main soc of the device is the nRF52840 with 1MB of Flash 256KB RAM, it is not locked or read protected with exposed debug pads.
 
 It also contains an ESP8266 WIFI SoC with 2MB of external Flash, running AT firmware and has exposed debug pads.
