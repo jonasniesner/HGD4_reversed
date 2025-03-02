@@ -34,7 +34,7 @@ What we know about the pins of the nRF52840 so far:
 | 15  | SDA                                          |
 | 17  | Modem Rxd GPIO ?                             |
 | 22  | Modem Txd GPIO ?                             |
-| 29  | Modem power pin ??                           |
+| 29  | Modem power, switches the actual rail        |
 | 32  | Uart logging Rxd ?                           |
 | 33  | Uart logging Txd ?                           |
 | 34  | Modem power pin ??                           |
