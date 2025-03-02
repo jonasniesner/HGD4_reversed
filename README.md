@@ -4,13 +4,19 @@ Information about the LOCO Track Primary HGD4 GPS tracker
 ![pinout](https://github.com/jonasniesner/HGD4_reversed/blob/main/pinout.webp?raw=true)
 
 
-The main soc of the device is the nRF52840 with 1MB of Flash 256KB RAM, it is not locked or read protected with exposed debug pads.
-
-It also contains an ESP8266 WIFI SoC with 2MB of external Flash, running AT firmware and has exposed debug pads.
-
-The modem is a Quectel BG95-M3 LTE MODEM with GPS. Both antennas are fitted and the usb of the modem is likely exposed to debug pads.
-
-The other sensors are 2 Acceleration Sensors(LIS3DH), a Light Sensor(VEML6035) next to the push button(that will allow the device to wake up from a low power state), a Temperature + Humidity Sensor(ENS210) and Pressure sensor and a red and green led.
+| Component                      | Type                      |  Note                                        | Marking |
+|--------------------------------|--------------------------|-----------------------------------------------|--------------|
+| nRF52840                       | SoC                       | Main SoC, 1MB Flash, 256KB RAM               | U1           |
+| ESP8266                        | WiFi SoC                  | 2MB external Flash, running AT firmware      | IC8          |
+| Quectel BG95-M3                | LTE Modem with GPS        | USB exposed to debug pads                    | M1           |
+| LIS3DH                         | Acceleration Sensor       | Two units present                            | U2           |
+| LIS3DH                         | Acceleration Sensor       | Two units present                            | U3           |
+| VEML6035                       | Light Sensor              | Next to push button, used for wake-up        | IC7          |
+| ENS210                         | Temperature + Humidity Sensor | -                                        | -            |
+| TPL5010                        | Watchdog                  | needs to be fed                              | IC4          |
+| Unspecified Pressure Sensor    | Pressure Sensor           | -                                            | IC5          |
+| Red LED                        | LED                       | -                                            | LED1         |
+| Green LED                      | LED                       | -                                            | LED2         |
 
 What we know about the pins of the nRF52840 so far:
 
