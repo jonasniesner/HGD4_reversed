@@ -12,7 +12,7 @@ Information about the LOCO Track Primary HGD4 GPS tracker
 | LIS3DH                         | Acceleration Sensor       | Two units present                            | U2           |
 | LIS3DH                         | Acceleration Sensor       | Two units present                            | U3           |
 | VEML6035                       | Light Sensor              | Next to push button, used for wake-up        | IC7          |
-| ENS210                         | Temperature + Humidity Sensor | -                                        | -            |
+| ENS210                         | Temperature + Humidity Sensor | -                                        | IC3          |
 | TPL5010                        | Watchdog                  | needs to be fed                              | IC4          |
 | Unspecified Pressure Sensor    | Pressure Sensor           | -                                            | IC5          |
 | Red LED                        | LED                       | -                                            | LED1         |
