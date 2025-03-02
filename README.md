@@ -11,6 +11,73 @@ The other sensors are 2 Acceleration Sensors(LIS3DH), a Light Sensor(VEML6035) n
 
 The full schematic of the device will still need to be reversed and the sensors need to be properly identifyed. PRs are welcome. 
 
+What we know so far
+
+0
+1
+2    Power Latch - High Z * High -> Stay on -> low hard power off
+3
+4    CS ACCL 2 ? 
+5
+6     CS ACCL 1 ?
+7
+8     MISO?
+9     TPL5010 Wake input
+10    TPL5010 Done output
+11
+12   SPI CLK ?
+13     SCL 
+14
+15    SDA
+16
+17  Modem Rxd GPIO 17 ?
+18
+19
+20
+21
+22  Modem Txd GPIO ?
+23
+24
+25
+26
+27
+28
+29  Modem power pin ??
+30
+31
+32   Uart loggig Rxd ? 
+33   Uart loggig Txd ? 
+34   Modem power pin ??
+35
+36
+37
+38
+39
+40
+41   MOSI ? 
+42   Wifi Rxd ?   Baud 115200
+43   WIFI Txd ?   Baud 115200
+44
+45   Modem power pin ??
+46
+47
+48
+49
+50
+51
+52
+53
+54
+55
+56
+57
+58
+59
+60
+61
+62
+63
+
 For now we know the following(thanks to atc1441)
 
 I2C for most sensors(Temp, Pressure, Light):
