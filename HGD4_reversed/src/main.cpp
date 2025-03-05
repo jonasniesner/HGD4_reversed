@@ -43,6 +43,8 @@ void setup() {
   Wire.begin();
   //set i2c pins 
   pinMode(15, OUTPUT);
+  //initial watchdog feeding, necessary to avoid reset. this has to be in this position because otherwise i2c dies
+  in1_handler();
 }
 
 void loop() {
