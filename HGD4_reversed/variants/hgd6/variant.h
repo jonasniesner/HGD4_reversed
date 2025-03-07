@@ -96,6 +96,8 @@ static const uint8_t SCK  = PIN_SPI_SCK ;
 static const uint8_t SDA = PIN_WIRE_SDA;
 static const uint8_t SCL = PIN_WIRE_SCL;
 
+#define AL_ADDR 0x29
+
 #ifdef __cplusplus
 }
 #endif
