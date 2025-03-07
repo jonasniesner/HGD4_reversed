@@ -23,6 +23,8 @@ What we know about the pins of the nRF52840 so far:
 
 | Pin | Description                                   |
 |----:|-----------------------------------------------|
+|  0  | !LED Green                                    |
+|  1  | !RED Green                                    |
 |  2  | Power Latch - High Z * High -> Stay on -> Low hard power off |
 |  4  | CS ACCL 2 ?                                  |
 |  6  | CS ACCL 1 ?                                  |
