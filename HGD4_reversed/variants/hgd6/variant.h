@@ -38,20 +38,30 @@ extern "C"
 // PIN setup
 #define GREEN_LED              (0)
 #define RED_LED                (1)
-#define LED_BUILTIN          GREEN_LED
 #define PWR_LATCH              (2)
+#define ACCL1_CS               (4)
+#define ACCL2_CS               (6)
+#define SPI_MISO               (8)
 #define WAKE                   (9)
 #define DONE                   (10)
+#define SPI_CLK                (12)
 #define I2C_SCL                (13)
 #define I2C_SDA                (15)
+#define MODEM_RXD              (17)
+#define MODEM_TXD              (22)
+#define MODEM_ESP_PWR          (29)
+#define DEBUG_RXD              (32)
+#define DEBUG_TXD              (33)
+#define MODEM_PWRKEY           (34)
+#define SPI_MOSI               (41)
+#define ESP_RXD                (42)
+#define ESP_TXD                (43)
+#define ESP_PWR                (45)
 
-/*
- * Analog pins
- */
-#define PIN_A2               (3) // P0.03
-#define PIN_A3               (4) // P0.04
-#define PIN_A4               (5) // P0.05
-#define PIN_A5               (6) // P0.06
+#define PIN_A2               (3)
+#define PIN_A3               (4)
+#define PIN_A4               (5)
+#define PIN_A5               (6)
 
 static const uint8_t A2  = PIN_A2 ;
 static const uint8_t A3  = PIN_A3 ;
@@ -60,23 +70,17 @@ static const uint8_t A5  = PIN_A5 ;
 
 #define ADC_RESOLUTION    14
 
-/*
- * Serial interfaces
- */
-// Serial
-#define PIN_SERIAL_RX       (32)
-#define PIN_SERIAL_TX       (33)
+#define LED_BUILTIN          GREEN_LED
 
-/*
- * SPI Interfaces
- */
+#define PIN_SERIAL_RX       DEBUG_RXD
+#define PIN_SERIAL_TX       DEBUG_TXD
+
 #define SPI_INTERFACES_COUNT 1
 
-#define PIN_SPI_MISO         (12)
-#define PIN_SPI_MOSI         (41)
-#define PIN_SPI_SCK          (24)
+#define PIN_SPI_MISO         SPI_MISO
+#define PIN_SPI_MOSI         SPI_MOSI
+#define PIN_SPI_SCK          SPI_CLK
 
-static const uint8_t SS   = 25 ;
 static const uint8_t MOSI = PIN_SPI_MOSI ;
 static const uint8_t MISO = PIN_SPI_MISO ;
 static const uint8_t SCK  = PIN_SPI_SCK ;
