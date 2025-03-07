@@ -1,26 +1,10 @@
-/*
-  Copyright (c) 2014-2015 Arduino LLC.  All right reserved.
-  Copyright (c) 2016 Sandeep Mistry All right reserved.
-  This library is free software; you can redistribute it and/or
-  modify it under the terms of the GNU Lesser General Public
-  License as published by the Free Software Foundation; either
-  version 2.1 of the License, or (at your option) any later version.
-  This library is distributed in the hope that it will be useful,
-  but WITHOUT ANY WARRANTY; without even the implied warranty of
-  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
-  See the GNU Lesser General Public License for more details.
-  You should have received a copy of the GNU Lesser General Public
-  License along with this library; if not, write to the Free Software
-  Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA  02110-1301  USA
-*/
-
 #ifndef _VARIANT_GENERIC_
 #define _VARIANT_GENERIC_
 
 #include "nrf.h"
+
 #include "nrf_peripherals.h"
 
-/** Master clock frequency */
 #if defined(NRF52_SERIES)
 #define VARIANT_MCK       (64000000ul)
 #else
@@ -81,19 +65,19 @@ static const uint8_t A5  = PIN_A5 ;
  * Serial interfaces
  */
 // Serial
-#define PIN_SERIAL_RX       (17) // P0.00
-#define PIN_SERIAL_TX       (22) // P0.01
+#define PIN_SERIAL_RX       (32)
+#define PIN_SERIAL_TX       (33)
 
 /*
  * SPI Interfaces
  */
 #define SPI_INTERFACES_COUNT 1
 
-#define PIN_SPI_MISO         (12) // P0.22
-#define PIN_SPI_MOSI         (41) // P0.23
-#define PIN_SPI_SCK          (24) // P0.24
+#define PIN_SPI_MISO         (12)
+#define PIN_SPI_MOSI         (41)
+#define PIN_SPI_SCK          (24)
 
-static const uint8_t SS   = 25 ;  // P0.25
+static const uint8_t SS   = 25 ;
 static const uint8_t MOSI = PIN_SPI_MOSI ;
 static const uint8_t MISO = PIN_SPI_MISO ;
 static const uint8_t SCK  = PIN_SPI_SCK ;

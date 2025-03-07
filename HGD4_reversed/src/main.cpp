@@ -43,16 +43,30 @@ void setup() {
   Wire.begin();
   //set i2c pins 
   pinMode(15, OUTPUT);
-  //initial watchdog feeding, necessary to avoid reset. this has to be in this position because otherwise i2c dies
+  //needed for some boards
   in1_handler();
 }
 
+int ptt = 34;
+
 void loop() {
   Serial.println("loop");
-  busscan();
-  measuretemp();
-  lightsense();
-  delay(1000);
+  pinMode(29,OUTPUT);
+  digitalWrite(29,HIGH);
+
+  pinMode(34,OUTPUT);
+  digitalWrite(34,HIGH);
+  delay(600);
+  digitalWrite(34,LOW);
+  delay(600);
+  //testallpins();
+  //measuretemp();
+  //lightsense();
+  //pinMode(ptt,OUTPUT);
+  //digitalWrite(ptt,HIGH);
+  //delay(100);
+  //digitalWrite(ptt,LOW);
+  //delay(100);
 }
 
 void test1pin(int i,int d){
@@ -155,14 +169,17 @@ void busscan(){
 }
 
 void testallpins(){
-  for (size_t i = 0; i < 64; i++){
+  for (size_t i = 36; i < 64; i++){
     if(i != 2 && i != 29){
     Serial.println(String(i));
-    pinMode(i, OUTPUT);
-    digitalWrite(i, HIGH);
-    delay(50);
-    digitalWrite(i, LOW);
-    delay(50);
+    for (size_t  j= 0; j < 50; j++)
+    {
+      pinMode(i, OUTPUT);
+      digitalWrite(i, HIGH);
+      delay(50);
+      digitalWrite(i, LOW);
+      delay(50);
+    }
     }
   }
 }
