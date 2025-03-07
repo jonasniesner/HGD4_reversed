@@ -35,31 +35,30 @@ extern "C"
 #define NUM_ANALOG_INPUTS    (6u)
 #define NUM_ANALOG_OUTPUTS   (0u)
 
-// LEDs
-#define PIN_LED              (13) // P0.13
-#define LED_BUILTIN          PIN_LED
+// PIN setup
+#define GREEN_LED              (0)
+#define RED_LED                (1)
+#define LED_BUILTIN          GREEN_LED
+#define PWR_LATCH              (2)
+#define WAKE                   (9)
+#define DONE                   (10)
+#define I2C_SCL                (13)
+#define I2C_SDA                (15)
 
 /*
  * Analog pins
  */
-#define PIN_A0               (1) // P0.01
-#define PIN_A1               (2) // P0.02
 #define PIN_A2               (3) // P0.03
 #define PIN_A3               (4) // P0.04
 #define PIN_A4               (5) // P0.05
 #define PIN_A5               (6) // P0.06
 
-static const uint8_t A0  = PIN_A0 ;
-static const uint8_t A1  = PIN_A1 ;
 static const uint8_t A2  = PIN_A2 ;
 static const uint8_t A3  = PIN_A3 ;
 static const uint8_t A4  = PIN_A4 ;
 static const uint8_t A5  = PIN_A5 ;
-#if defined(NRF52_SERIES)
+
 #define ADC_RESOLUTION    14
-#else
-#define ADC_RESOLUTION    10
-#endif
 
 /*
  * Serial interfaces
@@ -87,8 +86,8 @@ static const uint8_t SCK  = PIN_SPI_SCK ;
  */
 #define WIRE_INTERFACES_COUNT 1
 
-#define PIN_WIRE_SDA         (15)
-#define PIN_WIRE_SCL         (13)
+#define PIN_WIRE_SDA         (I2C_SDA)
+#define PIN_WIRE_SCL         (I2C_SCL)
 
 static const uint8_t SDA = PIN_WIRE_SDA;
 static const uint8_t SCL = PIN_WIRE_SCL;
