@@ -35,9 +35,9 @@ What we know about the pins of the nRF52840 so far:
 | 17  | Modem Rxd GPIO ?                             |
 | 22  | Modem Txd GPIO ?                             |
 | 29  | Modem power, switches the actual rail        |
-| 32  | Uart logging Rxd ?                           |
-| 33  | Uart logging Txd ?                           |
-| 34  | Modem power pin ??                           |
+| 32  | Uart logging Rxd (broken out gpio)           |
+| 33  | Uart logging Txd (broken out gpio)           |
+| 34  | Modem !pwrkey                                |
 | 41  | MOSI ?                                       |
 | 42  | Wifi Rxd ? Baud 115200                       |
 | 43  | Wifi Txd ? Baud 115200                       |
