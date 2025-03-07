@@ -3,6 +3,7 @@
 SparkFun_Ambient_Light light(AL_ADDR);
 
 ENS210 ens210;
+LPS22HBSensor lps22hb(&Wire);
 
 Adafruit_LIS3DH acc1 = Adafruit_LIS3DH(ACCL1_CS);
 Adafruit_LIS3DH acc2 = Adafruit_LIS3DH(ACCL2_CS);
@@ -12,11 +13,12 @@ void setup() {
 }
 
 void loop() {
-  Serial.println("loop");
-  busscan();
+  Serial.println();
+  Serial.println("|---------Starting loop---------|");
   //powerupesp();
   //powerupmodem();
   measuretemp();
+  measurepressure();
   lightsense();
   delay(1000);
 }
@@ -83,53 +85,56 @@ long luxVal = 0;
     Serial.println("Could not communicate with the light sensor!");
   light.setGain(gain);
   light.setIntegTime(time);
+
+  Serial.println("|-----------------------------|");
+  Serial.println("| Sensor: VEML6035            |");
+  Serial.println("| Gain    | Integration Time  |");
+  Serial.print("| ");
+  Serial.print(gain, 3);
+  Serial.print("   | ");
+  Serial.print(time);
+  Serial.println("               |");
+  
   luxVal = light.readLight();
-  Serial.print("Ambient Light Reading: ");
+  
+  Serial.println("|-----------------------------|");
+  Serial.println("| Ambient Light Reading       |");
+  Serial.print("| ");
   Serial.print(luxVal);
-  Serial.println(" Lux");  
+  Serial.println(" Lux");
+  Serial.println("|-----------------------------|");  
 }
 
 void measuretemp(){
   ens210.begin();
   int t_data, t_status, h_data, h_status;
   ens210.measure(&t_data, &t_status, &h_data, &h_status );
-  Serial.print( ens210.toCelsius(t_data,10)/10.0, 1 ); Serial.print(" C, ");
-  Serial.print( ens210.toPercentageH(h_data,1)      ); Serial.print(" %RH");
-  Serial.println();
+
+  Serial.println("|-------------------------------|");
+  Serial.println("| Sensor: ENS210                |");
+  Serial.println("| Temperature  | Humidity       |");
+  Serial.print("| ");
+  Serial.print(ens210.toCelsius(t_data, 10) / 10.0, 1);
+  Serial.print(" C       | ");
+  Serial.print(ens210.toPercentageH(h_data, 1));
+  Serial.println(" %RH         |");
+  Serial.println("|-------------------------------|");
 }
 
-void busscan(){
-   byte error, address;
-  int nDevices;
- 
-  Serial.println("Scanning...");
- 
-  nDevices = 0;
-  for(address = 1; address < 127; address++ )
-  {
-    Wire.beginTransmission(address);
-    error = Wire.endTransmission();
- 
-    if (error == 0)
-    {
-      Serial.print("I2C device found at address 0x");
-      if (address<16)
-        Serial.print("0");
-      Serial.print(address,HEX);
-      Serial.println("  !");
- 
-      nDevices++;
-    }
-    else if (error==4)
-    {
-      Serial.print("Unknown error at address 0x");
-      if (address<16)
-        Serial.print("0");
-      Serial.println(address,HEX);
-    }    
-  }
-  if (nDevices == 0)
-    Serial.println("No I2C devices found\n");
-  else
-    Serial.println("done\n");
+void measurepressure(){
+  lps22hb.begin();
+  lps22hb.Enable();
+  float pressure, temperature;
+  lps22hb.GetPressure(&pressure);
+  lps22hb.GetTemperature(&temperature);
+
+  Serial.println("|----------------------------------|");
+  Serial.println("| Sensor: LPS22HB                  |");
+  Serial.println("| Pressure[hPa]  | Temperature[C]  |");
+  Serial.print("| ");
+  Serial.print(pressure, 2);
+  Serial.print("        | ");
+  Serial.print(temperature, 2);
+  Serial.println("           |");
+  Serial.println("|----------------------------------|");
 }

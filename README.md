@@ -14,7 +14,7 @@ Information about the LOCO Track Primary HGD4 GPS tracker
 | VEML6035                       | Light Sensor              | Next to push button, used for wake-up        | IC7          |
 | ENS210                         | Temperature + Humidity Sensor | -                                        | IC3          |
 | TPL5010                        | Watchdog                  | needs to be fed                              | IC4          |
-| Unspecified Pressure Sensor    | Pressure Sensor           | -                                            | IC5          |
+| LPS22HB                        | Pressure Sensor           | -                                            | IC5          |
 | Red LED                        | LED                       | -                                            | LED1         |
 | Green LED                      | LED                       | -                                            | LED2         |
 | Button                         | Push Button               | Wakes the device power off                   | SW1          |
