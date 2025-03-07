@@ -16,70 +16,72 @@ ENS210 ens210;
 
 Adafruit_LIS3DH lis = Adafruit_LIS3DH(LIS3DH_CS);
 
-void testallpins();
-void test1pin(int i,int d);
 void busscan();
 void measuretemp();
 void lightsense();
+void powerupesp();
 
 void in1_handler() {
-  digitalWrite(10,HIGH);
+  digitalWrite(DONE,HIGH);
   delay(1);
-  digitalWrite(10,LOW);
-  delay(1);
+  digitalWrite(DONE,LOW);
 }
 
 void setup() {
   //latch on the main power
-  pinMode(2, OUTPUT);
-  digitalWrite(2, HIGH);
+  pinMode(PWR_LATCH , OUTPUT);
+  digitalWrite(PWR_LATCH , HIGH);
   //setup watchdog feeding
-  pinMode(10, OUTPUT);
-  pinMode(9, INPUT);
-  attachInterrupt(digitalPinToInterrupt(9), in1_handler, RISING);
+  pinMode(WAKE, INPUT);
+  pinMode(DONE, OUTPUT);
+  attachInterrupt(digitalPinToInterrupt(WAKE), in1_handler, RISING);
   //setup Serial
   Serial.begin(115200);
   //setup I2C bus
   Wire.begin();
   //set i2c pins 
-  pinMode(15, OUTPUT);
+  pinMode(I2C_SDA, OUTPUT);
   //needed for some boards
   in1_handler();
+  //set up leds
+  pinMode(RED_LED,OUTPUT);
+  pinMode(GREEN_LED,OUTPUT);
+  delay(100);
+  digitalWrite(RED_LED,HIGH);
+  digitalWrite(GREEN_LED,HIGH);
 }
 
-int ptt = 34;
+int ptt = 0;
 
 void loop() {
   Serial.println("loop");
+  busscan();
+  //powerupesp();
+  //powerupmodem();
+  measuretemp();
+  lightsense();
+  delay(1000);
+}
+
+void powerupesp(){
+  Serial.println("powering up esp");
   pinMode(29,OUTPUT);
   digitalWrite(29,HIGH);
+  pinMode(45,OUTPUT);
+  digitalWrite(45,HIGH);
+  delay(600);
+}
 
+void powerupmodem(){
+  Serial.println("powering up modem");
+  pinMode(29,OUTPUT);
+  digitalWrite(29,HIGH);
+  delay(600);
   pinMode(34,OUTPUT);
   digitalWrite(34,HIGH);
   delay(600);
   digitalWrite(34,LOW);
   delay(600);
-  //testallpins();
-  //measuretemp();
-  //lightsense();
-  //pinMode(ptt,OUTPUT);
-  //digitalWrite(ptt,HIGH);
-  //delay(100);
-  //digitalWrite(ptt,LOW);
-  //delay(100);
-}
-
-void test1pin(int i,int d){
-    Serial.println("Testing Pin with number");
-    Serial.println(i);
-    pinMode(i, OUTPUT);
-    for (size_t j = 0; j < 100; j++)
-    {
-      delay(d);
-      digitalWrite(i, HIGH);
-      delay(d);
-      digitalWrite(i, LOW);
-    }
 }
 
 void lightsense(){
@@ -166,20 +168,4 @@ void busscan(){
     Serial.println("No I2C devices found\n");
   else
     Serial.println("done\n");
-}
-
-void testallpins(){
-  for (size_t i = 36; i < 64; i++){
-    if(i != 2 && i != 29){
-    Serial.println(String(i));
-    for (size_t  j= 0; j < 50; j++)
-    {
-      pinMode(i, OUTPUT);
-      digitalWrite(i, HIGH);
-      delay(50);
-      digitalWrite(i, LOW);
-      delay(50);
-    }
-    }
-  }
 }
