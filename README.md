@@ -26,21 +26,48 @@ What we know about the pins of the nRF52840 so far:
 |  0  | !LED Green                                    |
 |  1  | !RED Green                                    |
 |  2  | Power Latch - High Z * High -> Stay on -> Low hard power off |
-|  4  | CS ACCL 2 ?                                  |
-|  6  | CS ACCL 1 ?                                  |
+|  3  | NC                                           |
+|  4  | CS ACCL 2                                    |
+|  5  | NC                                           |
+|  6  | CS ACCL 1                                    |
+|  7  | NC                                           |
 |  8  | MISO?                                        |
 |  9  | TPL5010 Wake input                           |
 | 10  | TPL5010 Done output                          |
-| 12  | SPI CLK ?                                    |
+| 11  | ??????????????? T2                           |
+| 12  | SPI CLK                                      |
 | 13  | SCL                                          |
+| 14  | ?????   AC9                                  |
 | 15  | SDA                                          |
-| 17  | Modem Rxd GPIO ?                             |
-| 22  | Modem Txd GPIO ?                             |
+| 16  | ??????????????  AC11                         |
+| 17  | Modem Rxd GPIO                               |
+| 18  | RESET                                        |
+| 19  | NC                                           |
+| 20  | ??????????    AD16                           |
+| 21  | NC                                           |
+| 22  | Modem Txd GPIO                               |
+| 23  | NC                                           |
+| 24  | ???????????   AD20                           |
+| 25  | NC                                           |
+| 26  | ???????????   G1                             |
+| 27  | NC                                           |
+| 28  | NC                                           |
 | 29  | Modem + ESP power, switches the actual rail  |
+| 30  | NC                                           |
+| 31  | ??????????   A8  AN!                         |
 | 32  | Uart logging Rxd (broken out gpio)           |
 | 33  | Uart logging Txd (broken out gpio)           |
 | 34  | Modem !pwrkey                                |
-| 41  | MOSI ?                                       |
-| 42  | Wifi Rxd ? Baud 115200                       |
-| 43  | Wifi Txd ? Baud 115200                       |
+| 35  | NC                                           |
+| 36  | ???????????   U24                            |
+| 37  | NC                                           |
+| 38  | ????????????   R24                           |
+| 39  | NC                                           |
+| 40  | NC                                           |
+| 41  | MOSI                                         |
+| 42  | Wifi Rxd   Baud 115200                       |
+| 43  | Wifi Txd   Baud 115200                       |
+| 44  | NC                                           |
 | 45  | ESP power pin                                |
+| 46  | NC                                           |
+| 47  | ?????????????  A14                           |
