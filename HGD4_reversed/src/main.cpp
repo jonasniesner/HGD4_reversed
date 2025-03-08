@@ -138,3 +138,47 @@ void measurepressure(){
   Serial.println("           |");
   Serial.println("|----------------------------------|");
 }
+
+void measureacc(){
+  if (! acc1.begin()) {
+    Serial.println("Couldnt start acc1");
+  }
+  if (! acc2.begin()) {
+    Serial.println("Couldnt start acc2");
+  }
+  Serial.print("Range = "); Serial.print(2 << acc1.getRange());
+  Serial.println("G");
+
+  // lis.setPerformanceMode(LIS3DH_MODE_LOW_POWER);
+  Serial.print("Performance mode set to: ");
+  switch (acc1.getPerformanceMode()) {
+    case LIS3DH_MODE_NORMAL: Serial.println("Normal 10bit"); break;
+    case LIS3DH_MODE_LOW_POWER: Serial.println("Low Power 8bit"); break;
+    case LIS3DH_MODE_HIGH_RESOLUTION: Serial.println("High Resolution 12bit"); break;
+  }
+
+  // lis.setDataRate(LIS3DH_DATARATE_50_HZ);
+  Serial.print("Data rate set to: ");
+  switch (acc1.getDataRate()) {
+    case LIS3DH_DATARATE_1_HZ: Serial.println("1 Hz"); break;
+    case LIS3DH_DATARATE_10_HZ: Serial.println("10 Hz"); break;
+    case LIS3DH_DATARATE_25_HZ: Serial.println("25 Hz"); break;
+    case LIS3DH_DATARATE_50_HZ: Serial.println("50 Hz"); break;
+    case LIS3DH_DATARATE_100_HZ: Serial.println("100 Hz"); break;
+    case LIS3DH_DATARATE_200_HZ: Serial.println("200 Hz"); break;
+    case LIS3DH_DATARATE_400_HZ: Serial.println("400 Hz"); break;
+
+    case LIS3DH_DATARATE_POWERDOWN: Serial.println("Powered Down"); break;
+    case LIS3DH_DATARATE_LOWPOWER_5KHZ: Serial.println("5 Khz Low Power"); break;
+    case LIS3DH_DATARATE_LOWPOWER_1K6HZ: Serial.println("1.6 Khz Low Power"); break;
+  }
+  Serial.println("Reading");
+  acc1.read();
+  Serial.print("X:  "); Serial.print(acc1.x);
+  Serial.print("  \tY:  "); Serial.print(acc1.y);
+  Serial.print("  \tZ:  "); Serial.print(acc1.z);
+  acc2.read();
+  Serial.print("X:  "); Serial.print(acc2.x);
+  Serial.print("  \tY:  "); Serial.print(acc2.y);
+  Serial.print("  \tZ:  "); Serial.print(acc2.z);
+}
