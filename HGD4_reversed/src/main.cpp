@@ -26,10 +26,8 @@ void loop() {
   measuretemp();
   measurepressure();
   lightsense();
-  Serial.println("vbat");
-  Serial.println(((float)analogRead(VBAT_DIV) / 1000.0) * 6.0);
-  Serial.println("SW");
-  Serial.println(digitalRead(PWR_SW_IN));
+  ButtonState();
+  measureBattery();
   delay(1000);
 }
 
@@ -86,6 +84,22 @@ void powerupmodem(){
   delay(600);
   digitalWrite(MODEM_PWRKEY,LOW);
   delay(600);
+}
+
+void ButtonState() {
+  int buttonState = digitalRead(PWR_SW_IN);
+  Serial.println("|-----------------|");
+  Serial.println("| Button (SW)    |");
+  Serial.print("| State: "); Serial.println(buttonState ? "Pressed" : "Released");
+  Serial.println("|-----------------|");
+}
+
+void measureBattery() {
+  float voltage = ((float)analogRead(VBAT_DIV) / 1000.0) * 6.0;
+  Serial.println("|-------------------|");
+  Serial.println("| Battery Voltage  |");
+  Serial.print("| "); Serial.print(voltage, 2); Serial.println(" V");
+  Serial.println("|-------------------|");
 }
 
 void lightsense(){
@@ -151,17 +165,16 @@ void measurepressure(){
 }
 
 void measureacc(){
-  if (! acc1.begin()) {
-    Serial.println("Couldnt start acc1");
-  }
-  if (! acc2.begin()) {
-    Serial.println("Couldnt start acc2");
-  }
-  Serial.print("Range = "); Serial.print(2 << acc1.getRange());
-  Serial.println("G");
+  Serial.println("|----------------------------------|");
+  Serial.println("| Sensor: LIS3DH                   |");
+  if (!acc1.begin()) Serial.println("Could not start acc1");
+  if (!acc2.begin()) Serial.println("Could not start acc2");
+
+  Serial.print("| Range = "); Serial.print(2 << acc1.getRange());
+  Serial.println("G                       |");
 
   // lis.setPerformanceMode(LIS3DH_MODE_LOW_POWER);
-  Serial.print("Performance mode set to: ");
+  Serial.print("| Performance mode set to: ");
   switch (acc1.getPerformanceMode()) {
     case LIS3DH_MODE_NORMAL: Serial.println("Normal 10bit"); break;
     case LIS3DH_MODE_LOW_POWER: Serial.println("Low Power 8bit"); break;
@@ -169,7 +182,7 @@ void measureacc(){
   }
 
   // lis.setDataRate(LIS3DH_DATARATE_50_HZ);
-  Serial.print("Data rate set to: ");
+  Serial.print("| Data rate set to: ");
   switch (acc1.getDataRate()) {
     case LIS3DH_DATARATE_1_HZ: Serial.println("1 Hz"); break;
     case LIS3DH_DATARATE_10_HZ: Serial.println("10 Hz"); break;
@@ -183,13 +196,16 @@ void measureacc(){
     case LIS3DH_DATARATE_LOWPOWER_5KHZ: Serial.println("5 Khz Low Power"); break;
     case LIS3DH_DATARATE_LOWPOWER_1K6HZ: Serial.println("1.6 Khz Low Power"); break;
   }
-  Serial.println("Reading");
+  Serial.println("| Acc1 (X,Y,Z) | Acc2 (X,Y,Z)      |");
   acc1.read();
-  Serial.print("X:  "); Serial.print(acc1.x);
-  Serial.print("  \tY:  "); Serial.print(acc1.y);
-  Serial.print("  \tZ:  "); Serial.print(acc1.z);
   acc2.read();
-  Serial.print("X:  "); Serial.print(acc2.x);
-  Serial.print("  \tY:  "); Serial.print(acc2.y);
-  Serial.print("  \tZ:  "); Serial.print(acc2.z);
+
+  Serial.print("| ");
+  Serial.print(acc1.x); Serial.print(", ");
+  Serial.print(acc1.y); Serial.print(", ");
+  Serial.print(acc1.z); Serial.print(" | ");
+  Serial.print(acc2.x); Serial.print(", ");
+  Serial.print(acc2.y); Serial.print(", ");
+  Serial.print(acc2.z); Serial.println("|");
+  Serial.println("|----------------------------------|");
 }

@@ -10,6 +10,8 @@
 
 void measuretemp();
 void measurepressure();
+void ButtonState();
+void measureBattery();
 void lightsense();
 void powerupesp();
 void wd_handler();
