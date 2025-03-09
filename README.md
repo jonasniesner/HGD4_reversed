@@ -21,11 +21,11 @@ Information about the LOCO Track Primary HGD4 GPS tracker
 
 What we know about the pins of the nRF52840 so far:
 
-| Pin | Description                                   |
-|----:|-----------------------------------------------|
-|  0  | !LED Green                                    |
-|  1  | !RED Green                                    |
-|  2  | Power Latch - High Z * High -> Stay on -> Low hard power off |
+| Pin | Description                                  |
+|----:|----------------------------------------------|
+|  0  | !LED Green                                   |
+|  1  | !RED Green                                   |
+|  2  | VBAT measurement                             |
 |  3  | NC                                           |
 |  4  | CS ACCL 2                                    |
 |  5  | NC                                           |
@@ -54,7 +54,7 @@ What we know about the pins of the nRF52840 so far:
 | 28  | NC                                           |
 | 29  | Modem + ESP power, switches the actual rail  |
 | 30  | NC                                           |
-| 31  | VBAT measurement ? (R48 b)                   |
+| 31  | !Power Latch                                 |
 | 32  | Uart logging Rxd (broken out gpio)           |
 | 33  | Uart logging Txd (broken out gpio)           |
 | 34  | Modem !pwrkey                                |
