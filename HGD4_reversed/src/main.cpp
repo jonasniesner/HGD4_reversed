@@ -8,6 +8,11 @@ LPS22HBSensor lps22hb(&Wire);
 Adafruit_LIS3DH acc1 = Adafruit_LIS3DH(ACCL1_CS);
 Adafruit_LIS3DH acc2 = Adafruit_LIS3DH(ACCL2_CS);
 
+
+void testmodem(){
+  //SerialAT.begin(9600);
+}
+
 void setup() {
   gpioinit();
 }
@@ -17,9 +22,14 @@ void loop() {
   Serial.println("|---------Starting loop---------|");
   //powerupesp();
   //powerupmodem();
+  measureacc();
   measuretemp();
   measurepressure();
   lightsense();
+  Serial.println("vbat");
+  Serial.println(((float)analogRead(VBAT_DIV) / 1000.0) * 6.0);
+  Serial.println("SW");
+  Serial.println(digitalRead(PWR_SW_IN));
   delay(1000);
 }
 
@@ -29,11 +39,10 @@ void wd_handler() {
   digitalWrite(DONE,LOW);
 }
 
-
 void gpioinit(){
   //latch on the main power
   pinMode(PWR_LATCH , OUTPUT);
-  digitalWrite(PWR_LATCH , HIGH);
+  digitalWrite(PWR_LATCH , LOW);
   //setup watchdog feeding
   pinMode(WAKE, INPUT);
   pinMode(DONE, OUTPUT);
@@ -42,8 +51,9 @@ void gpioinit(){
   Serial.begin(115200);
   //setup I2C bus
   Wire.begin();
-  //set i2c pins 
-  pinMode(I2C_SDA, OUTPUT);
+  //power up sensors
+  pinMode(SENSOR_PWR, OUTPUT);
+  digitalWrite(SENSOR_PWR, HIGH);
   //needed for some boards
   wd_handler();
   //set up leds
@@ -58,6 +68,7 @@ void gpioinit(){
   digitalWrite(ESP_PWR,LOW);
   pinMode(MODEM_PWRKEY,OUTPUT);
   digitalWrite(MODEM_PWRKEY,LOW);
+  pinMode(PWR_SW_IN, INPUT);
 }
 
 void powerupesp(){
