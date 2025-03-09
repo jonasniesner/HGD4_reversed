@@ -31,37 +31,37 @@ What we know about the pins of the nRF52840 so far:
 |  5  | NC                                           |
 |  6  | CS ACCL 1                                    |
 |  7  | NC                                           |
-|  8  | MISO?                                        |
+|  8  | MISO                                         |
 |  9  | TPL5010 Wake input                           |
 | 10  | TPL5010 Done output                          |
-| 11  | ??????????????? T2                           |
+| 11  | Sensor VDD ?  (C74 l)                        |
 | 12  | SPI CLK                                      |
 | 13  | SCL                                          |
-| 14  | ?????   AC9                                  |
+| 14  | bridged to 16 and 18                         |
 | 15  | SDA                                          |
-| 16  | ??????????????  AC11                         |
+| 16  | bridged to 14 and 18                         |
 | 17  | Modem Rxd GPIO                               |
 | 18  | RESET                                        |
 | 19  | NC                                           |
-| 20  | ??????????    AD16                           |
+| 20  | connects to R29 R                            |
 | 21  | NC                                           |
 | 22  | Modem Txd GPIO                               |
 | 23  | NC                                           |
-| 24  | ???????????   AD20                           |
+| 24  | Connects to Q5 U R                           |
 | 25  | NC                                           |
-| 26  | ???????????   G1                             |
+| 26  | ACC U3 int ?                                 |
 | 27  | NC                                           |
 | 28  | NC                                           |
 | 29  | Modem + ESP power, switches the actual rail  |
 | 30  | NC                                           |
-| 31  | ??????????   A8  AN!                         |
+| 31  | VBAT measurement ? (R48 b)                   |
 | 32  | Uart logging Rxd (broken out gpio)           |
 | 33  | Uart logging Txd (broken out gpio)           |
 | 34  | Modem !pwrkey                                |
 | 35  | NC                                           |
-| 36  | ???????????   U24                            |
+| 36  | VEML6035 INT                                 |
 | 37  | NC                                           |
-| 38  | ????????????   R24                           |
+| 38  | Switch input ?                               |
 | 39  | NC                                           |
 | 40  | NC                                           |
 | 41  | MOSI                                         |
@@ -70,4 +70,4 @@ What we know about the pins of the nRF52840 so far:
 | 44  | NC                                           |
 | 45  | ESP power pin                                |
 | 46  | NC                                           |
-| 47  | ?????????????  A14                           |
+| 47  | ESP GPIO 0                                   |
