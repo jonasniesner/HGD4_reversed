@@ -34,7 +34,7 @@ What we know about the pins of the nRF52840 so far:
 |  8  | MISO                                         |
 |  9  | TPL5010 Wake input                           |
 | 10  | TPL5010 Done output                          |
-| 11  | Sensor VDD ?  (C74 l)                        |
+| 11  | Sensor VDD                                   |
 | 12  | SPI CLK                                      |
 | 13  | SCL                                          |
 | 14  | bridged to 16 and 18                         |
@@ -49,7 +49,7 @@ What we know about the pins of the nRF52840 so far:
 | 23  | NC                                           |
 | 24  | Connects to Q5 U R                           |
 | 25  | NC                                           |
-| 26  | ACC U3 int ?                                 |
+| 26  | ACC U3 int                                   |
 | 27  | NC                                           |
 | 28  | NC                                           |
 | 29  | Modem + ESP power, switches the actual rail  |
@@ -61,7 +61,7 @@ What we know about the pins of the nRF52840 so far:
 | 35  | NC                                           |
 | 36  | VEML6035 INT                                 |
 | 37  | NC                                           |
-| 38  | Switch input ?                               |
+| 38  | Switch input                                 |
 | 39  | NC                                           |
 | 40  | NC                                           |
 | 41  | MOSI                                         |
