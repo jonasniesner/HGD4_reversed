@@ -20,7 +20,12 @@ jobs:
       - name: Install PlatformIO Core
         run: pip install --upgrade platformio
 
-      - name: Build PlatformIO Project
+      - name: Build NRF firmware
         run: |
-          cd HGD4_reversed
+          cd NRF_firmware
+          pio run
+
+      - name: Build ESP firmware
+        run: |
+          cd ESP_firmware
           pio run
