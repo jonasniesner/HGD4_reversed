@@ -5,15 +5,7 @@
 
 #include "nrf_peripherals.h"
 
-#if defined(NRF52_SERIES)
 #define VARIANT_MCK       (64000000ul)
-#else
-#define VARIANT_MCK       (16000000ul)
-#endif
-
-/*----------------------------------------------------------------------------
- *        Headers
- *----------------------------------------------------------------------------*/
 
 #include "WVariant.h"
 
@@ -22,20 +14,9 @@ extern "C"
 {
 #endif // __cplusplus
 
-// Number of pins defined in PinDescription array
-#if GPIO_COUNT == 1
-#define PINS_COUNT           (32u)
-#define NUM_DIGITAL_PINS     (32u)
-#elif GPIO_COUNT == 2
 #define PINS_COUNT           (64u)
 #define NUM_DIGITAL_PINS     (64u)
-#else
-#error "Unsupported GPIO_COUNT"
-#endif
-#define NUM_ANALOG_INPUTS    (6u)
-#define NUM_ANALOG_OUTPUTS   (0u)
 
-// PIN setup
 #define GREEN_LED              (0)
 #define RED_LED                (1)
 #define VBAT_DIV               (2)
@@ -49,7 +30,9 @@ extern "C"
 #define I2C_SCL                (13)
 #define I2C_SDA                (15)
 #define MODEM_RXD              (17)
+#define MODEM_CON_A            (20)
 #define MODEM_TXD              (22)
+#define MODEM_CON_B            (24)
 #define ACC_INT                (26)
 #define MODEM_ESP_PWR          (29)
 #define PWR_LATCH              (31)
@@ -63,19 +46,12 @@ extern "C"
 #define ESP_PWR                (45)
 #define ESP_GPIO0              (47)
 
-#define PIN_A1               (VBAT_DIV)
-
-static const uint8_t A1  = PIN_A1 ;
-
 #define ADC_RESOLUTION    14
 
 #define LED_BUILTIN          GREEN_LED
 
-#define PIN_SERIAL_RX       DEBUG_RXD
-#define PIN_SERIAL_TX       DEBUG_TXD
-
-#define PIN_SERIAL2_RX       MODEM_RXD
-#define PIN_SERIAL2_TX       MODEM_TXD
+#define PIN_SERIAL_RX       MODEM_RXD
+#define PIN_SERIAL_TX       MODEM_TXD 
 
 #define SPI_INTERFACES_COUNT 1
 
@@ -87,9 +63,6 @@ static const uint8_t MOSI = PIN_SPI_MOSI ;
 static const uint8_t MISO = PIN_SPI_MISO ;
 static const uint8_t SCK  = PIN_SPI_SCK ;
 
-/*
- * Wire Interfaces
- */
 #define WIRE_INTERFACES_COUNT 1
 
 #define PIN_WIRE_SDA         (I2C_SDA)
@@ -100,11 +73,7 @@ static const uint8_t SCL = PIN_WIRE_SCL;
 
 #define AL_ADDR 0x29
 #define TINY_GSM_MODEM_BG95
-#define SerialAT Serial1
-#define SerialMon Serial
-#define TINY_GSM_DEBUG SerialMon
-#define GSM_AUTOBAUD_MIN 9600
-#define GSM_AUTOBAUD_MAX 57600
+#define SerialAT Serial
 
 #ifdef __cplusplus
 }
