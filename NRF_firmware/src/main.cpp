@@ -1,35 +1,75 @@
 #include "main.h"
 
 const char server[]   = "api.64eng.de";
-const char resource[] = "ok.txt";
+const char resource[] = "/ok.txt";
 
 HttpClient    http(client, server, 80);
 
+static void startAdv(void);
+static void connect_callback(uint16_t conn_handle);
+static void disconnect_callback(uint16_t conn_handle, uint8_t reason);
+
 void setup() {
+  rtt.trimDownBufferFull();
   rtt.println("|---------Starting setup---------|");
-  gpioinit();
-  initmodem();
-  testmodem();
-  powerdownmodem();
-  delay(2000);
+  gpioinit(); 
+  wakeupreason = NRF_POWER->RESETREAS;
+  //initmodem();
+  //testmodem();
+  //powerdownmodem();
+  //delay(2000);
 }
 
 void loop() {
   rtt.println();
   rtt.println("|---------Starting loop---------|");
+  //sensorpwr(true);
+  sampleallsensors();
+  ButtonState();
+  rtt.println("WD counter");
+  rtt.println(wdcounter);
+  rtt.println(wakeupreason);
+  //sensorpwr(false);
+  delay(1000);
+}
+
+void sensorpwr(bool onoff){
+  //this is not working as it should yet
+  if(!onoff){
+  rtt.println("Power down sensors");
+  Wire.end();
+  pinMode(I2C_SCL,INPUT);
+  pinMode(I2C_SDA,INPUT);
+  pinMode(SPI_CLK,INPUT);
+  pinMode(SPI_MISO,INPUT);
+  pinMode(SPI_MOSI,INPUT);
+  pinMode(ACCL1_CS,INPUT);
+  pinMode(ACCL2_CS,INPUT);
+  pinMode(SENSOR_PWR,INPUT);
+  }
+  else{
+  rtt.println("Power up sensors");
+  pinMode(SENSOR_PWR,OUTPUT);
+  digitalWrite(SENSOR_PWR,HIGH);
+  Wire.begin();
+  }
+}
+
+void wd_handler() {
+  //digitalWrite(GREEN_LED,LOW);
+  digitalWrite(DONE,HIGH);
+  nrf_delay_us(160);
+  digitalWrite(DONE,LOW);
+  //digitalWrite(GREEN_LED,HIGH);
+  wdcounter++;
+}
+
+void sampleallsensors(){
   measureacc();
   measuretemp();
   measurepressure();
   lightsense();
-  ButtonState();
   measureBattery();
-  delay(10000);
-}
-
-void wd_handler() {
-  digitalWrite(DONE,HIGH);
-  delay(1);
-  digitalWrite(DONE,LOW);
 }
 
 void initmodem(){
@@ -126,22 +166,47 @@ void getgps(){
     if (modem.getGPS(&gps_latitude, &gps_longitude, &gps_speed, &gps_altitude,
                      &gps_vsat, &gps_usat, &gps_accuracy, &gps_year, &gps_month,
                      &gps_day, &gps_hour, &gps_minute, &gps_second)) {
-      rtt.printf("Latitude:", String(gps_latitude, 8), "\tLongitude:", String(gps_longitude, 8));
-      rtt.printf("Speed:", gps_speed, "\tAltitude:", gps_altitude);
-      rtt.printf("Visible Satellites:", gps_vsat, "\tUsed Satellites:", gps_usat);
-      rtt.printf("Accuracy:", gps_accuracy);
-      rtt.printf("Year:", gps_year, "\tMonth:", gps_month, "\tDay:", gps_day);
-      rtt.printf("Hour:", gps_hour, "\tMinute:", gps_minute, "\tSecond:", gps_second);
+      rtt.println("Latitude");
+      rtt.println(String(gps_latitude, 8));
+      rtt.println("Longitude");
+      rtt.println(String(gps_longitude, 8));
+      rtt.println("Speed");
+      rtt.println(gps_speed);
+      rtt.println("Altitude");
+      rtt.println(gps_altitude);
+
+      rtt.println("Visible Satellites");
+      rtt.println(gps_vsat);
+      rtt.println("Used Satellites");
+      rtt.println(gps_usat);
+
+      rtt.println("Accuracy");
+      rtt.println(gps_accuracy);
+
+      rtt.println("Year");
+      rtt.println(gps_year);
+      rtt.println("Month");
+      rtt.println(gps_month);
+      rtt.println("Day");
+      rtt.println(gps_day);
+
+      rtt.println("Hour");
+      rtt.println(gps_hour);
+      rtt.println("Minute");
+      rtt.println(gps_minute);
+      rtt.println("Second");
+      rtt.println(gps_second);
       break;
     } else {
-      rtt.printf("Couldn't get GPS/GNSS/GLONASS location, retrying in 15s.");
+      rtt.println("Couldn't get GPS/GNSS/GLONASS location, retrying in 15s.");
       delay(15000L);
     }
   }
-  rtt.printf("Retrieving GPS/GNSS/GLONASS location again as a string");
+  rtt.println("Retrieving GPS/GNSS/GLONASS location again as a string");
   String gps_raw = modem.getGPSraw();
-  rtt.printf("GPS/GNSS Based Location String:", gps_raw);
-  rtt.printf("Disabling GPS");
+  rtt.println("GPS/GNSS Based Location String:");
+  rtt.println(gps_raw);
+  rtt.println("Disabling GPS");
   modem.disableGPS();
 }
 
@@ -178,7 +243,42 @@ void testmodem(){
   rtt.println("Chip temperature");
   rtt.println(modem.getTemperature());
 
-  httpreq();
+
+  rtt.println("Asking modem to sync with NTP");
+  rtt.println(modem.NTPServerSync("pool.ntp.org", 20));
+
+  int   ntp_year     = 0;
+  int   ntp_month    = 0;
+  int   ntp_day      = 0;
+  int   ntp_hour     = 0;
+  int   ntp_min      = 0;
+  int   ntp_sec      = 0;
+  float ntp_timezone = 0;
+  for (int8_t i = 5; i; i--) {
+    rtt.println("Requesting current network time");
+    if (modem.getNetworkTime(&ntp_year, &ntp_month, &ntp_day, &ntp_hour, &ntp_min, &ntp_sec, &ntp_timezone)) {
+      rtt.println("h:");
+      rtt.println(ntp_hour);
+      rtt.println("m:");
+      rtt.println(ntp_min);
+      rtt.println("s:");
+      rtt.println(ntp_sec);
+      rtt.println("Timezone:");
+      rtt.println(ntp_timezone);
+      break;
+    } else {
+      rtt.println("Couldn't get network time, retrying in 15s.");
+      delay(15000L);
+    }
+  }
+  rtt.println("Retrieving time again as a string");
+  String time = modem.getGSMDateTime(DATE_FULL);
+  rtt.println("Current Network Time:");
+  rtt.println(time);
+
+  //httpreq();
+
+  //httpreq();
 
   //getgps();
 
@@ -252,8 +352,6 @@ void gpioinit(){
   //power up sensors
   pinMode(SENSOR_PWR, OUTPUT);
   digitalWrite(SENSOR_PWR, HIGH);
-  //needed for some boards
-  wd_handler();
   //set up leds
   pinMode(RED_LED,OUTPUT);
   pinMode(GREEN_LED,OUTPUT);
@@ -271,6 +369,16 @@ void gpioinit(){
   pinMode(MODEM_CON_B,OUTPUT);
   digitalWrite(MODEM_CON_A,LOW);
   digitalWrite(MODEM_CON_B,LOW);
+  //this is not nice and needs to be done get one initial watchdog pulse. THis is also time sensitive so dont mess around with it
+  delay(600);
+  for (size_t i = 0; i < 50; i++)
+  {
+    digitalWrite(DONE,HIGH);
+    delay(20);
+    digitalWrite(DONE,LOW);
+    delay(20);
+  }
+
 }
 
 void powerupesp(){
@@ -328,6 +436,7 @@ void measureBattery() {
   rtt.println("| Battery Voltage  |");
   rtt.print("| "); rtt.print(voltage, 2); rtt.println(" V");
   rtt.println("|-------------------|");
+  batvoltage = voltage;
 }
 
 void lightsense(){
@@ -356,6 +465,9 @@ long luxVal = 0;
   rtt.print(luxVal);
   rtt.println(" Lux");
   rtt.println("|-----------------------------|");  
+
+  lux = luxVal;
+  light.enablePowSave();
 }
 
 void measuretemp(){
@@ -372,24 +484,31 @@ void measuretemp(){
   rtt.print(ens210.toPercentageH(h_data, 1));
   rtt.println(" %RH         |");
   rtt.println("|-------------------------------|");
+
+  casetemp = ens210.toCelsius(t_data, 10) / 10.0;
+  casehum = ens210.toPercentageH(h_data, 1);
+
+  ens210.lowpower(true);
 }
 
 void measurepressure(){
   lps22hb.begin();
   lps22hb.Enable();
-  float pressure, temperature;
-  lps22hb.GetPressure(&pressure);
-  lps22hb.GetTemperature(&temperature);
-
+  float localpressure, localtemperature;
+  lps22hb.GetPressure(&localpressure);
+  lps22hb.GetTemperature(&localtemperature);
   rtt.println("|----------------------------------|");
   rtt.println("| Sensor: LPS22HB                  |");
   rtt.println("| Pressure[hPa]  | Temperature[C]  |");
   rtt.print("| ");
-  rtt.print(pressure, 2);
+  rtt.print(localpressure, 2);
   rtt.print("        | ");
-  rtt.print(temperature, 2);
+  rtt.print(localtemperature, 2);
   rtt.println("           |");
   rtt.println("|----------------------------------|");
+  pressure = localpressure;
+  pressuresensortemp = localtemperature;
+  lps22hb.end(); 
 }
 
 void measureacc(){
@@ -436,4 +555,11 @@ void measureacc(){
   rtt.print(acc2.y); rtt.print(", ");
   rtt.print(acc2.z); rtt.println("|");
   rtt.println("|----------------------------------|");
+
+  acc1x = acc1.x;
+  acc1y = acc1.y;
+  acc1z = acc1.z;
+  acc2x = acc2.x;
+  acc2y = acc2.y;
+  acc2z = acc2.z;
 }

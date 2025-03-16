@@ -52,7 +52,6 @@ const uint32_t g_ADigitalPinMap[] = {
   29,
   30,
   31,
-#if GPIO_COUNT > 1
   32,
   33,
   34,
@@ -84,6 +83,5 @@ const uint32_t g_ADigitalPinMap[] = {
   60,
   61,
   62,
-  63,
-#endif
+  63
 };
