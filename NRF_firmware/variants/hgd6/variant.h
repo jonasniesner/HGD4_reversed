@@ -53,6 +53,17 @@ extern "C"
 #define PIN_SERIAL_RX       MODEM_RXD
 #define PIN_SERIAL_TX       MODEM_TXD 
 
+#define PIN_SERIAL1_RX MODEM_RXD
+#define PIN_SERIAL1_TX MODEM_TXD
+
+#define LED_STATE_ON -1
+#define LED_BLUE -1
+
+#define HAVE_HWSERIAL2
+
+#define PIN_SERIAL2_RX ESP_RXD
+#define PIN_SERIAL2_TX ESP_TXD
+
 #define SPI_INTERFACES_COUNT 1
 
 #define PIN_SPI_MISO         SPI_MISO
@@ -73,7 +84,7 @@ static const uint8_t SCL = PIN_WIRE_SCL;
 
 #define AL_ADDR 0x29
 #define TINY_GSM_MODEM_BG95
-#define SerialAT Serial
+#define SerialAT Serial1
 
 #ifdef __cplusplus
 }

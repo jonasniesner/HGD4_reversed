@@ -56,6 +56,12 @@ struct SensorData {
   int network_channel;     // Network channel number
   String network_operator_code; // Network operator code
   
+  // WiFi scan data
+  String wifi_scan_data;   // JSON string of WiFi scan results
+  
+  // BLE scan data
+  String ble_scan_data;    // JSON string of BLE beacon scan results
+  
   // Constructor to initialize all values
   SensorData() {
     timestamp = 0;
@@ -92,6 +98,8 @@ struct SensorData {
     network_band = "";
     network_channel = 0;
     network_operator_code = "";
+    wifi_scan_data = "";
+    ble_scan_data = "";
   }
   
   // Method to check if data is fresh (within last 5 minutes)

@@ -16,24 +16,255 @@ void setup() {
   blinkLED(1, 200, 200, true);
   //checkModemStorageSpace();
   LoadDeviceConfig();
-  testESPCommunication();
-  powerdownESP();
+  if (deviceConfig.ble_scan_enabled) {
+    initializeBLE();
+  }
 }
 
 void loop() {
-  rtt.println();
+  lastWaitCheck = millis();
   rtt.println("|---------Starting loop---------|");
   sensorpwr(true);
-  sampleallsensors();
+  rtt.println("Collecting sensor data");
+  collectAllSensorData();
   rtt.print("WD counter ");
   rtt.print(sensorData.watchdog_counter);
   rtt.print(" Wakeup reason: ");
   rtt.println(sensorData.wakeup_reason);
   displaySensorDataSummary();
+  rtt.println("Scanning for beacons");
+  scanforbeacons();
+  rtt.println("Scanning for WiFi networks");
+  ScanForWiFiNetworks();
+  rtt.println("Managing modem lifecycle");
   manageModemLifecycle();
   sensorpwr(false);
-  delay(100000);
+  rtt.println("Waiting for next transmission");
   rtt.println("Loop cycle completed.");
+  while (!waitForNextTransmission(deviceConfig.transmission_interval)) {
+    performBackgroundTasks();
+  }
+}
+
+void ble_scan_callback(ble_gap_evt_adv_report_t* report){
+  if (!bleScanning) {
+    Bluefruit.Scanner.resume();
+    return;
+  }
+  
+  // Check if we've reached the maximum number of beacons
+  if (bleBeaconsFound >= deviceConfig.ble_scan_max_beacons) {
+    Bluefruit.Scanner.resume();
+    return;
+  }
+  
+  // Check if scan duration has expired
+  if (millis() - bleScanStartTime > deviceConfig.ble_scan_duration) {
+    Bluefruit.Scanner.resume();
+    return;
+  }
+  
+  JsonObject beacon = bleBeacons.createNestedObject();
+  if (beacon.isNull()) {
+    rtt.println("BLE: Failed to create beacon object");
+    Bluefruit.Scanner.resume();
+    return;
+  }
+  
+  // Add timestamp
+  beacon["ts"] = millis();
+  
+  // Add RSSI
+  beacon["rssi"] = report->rssi;
+  
+  // Add MAC address (little endian, so reverse for display)
+  char macStr[18];
+  sprintf(macStr, "%02X:%02X:%02X:%02X:%02X:%02X",
+          report->peer_addr.addr[5], report->peer_addr.addr[4], 
+          report->peer_addr.addr[3], report->peer_addr.addr[2], 
+          report->peer_addr.addr[1], report->peer_addr.addr[0]);
+  beacon["mac"] = String(macStr);
+  
+  // Add advertisement type
+  beacon["ty"] = report->type.scan_response ? "sr" : "adv";
+  beacon["con"] = report->type.connectable;
+  beacon["dir"] = report->type.directed;
+  
+  // Add payload length
+  beacon["plen"] = report->data.len;
+  
+  // Parse device name if available
+  uint8_t buffer[32];
+  memset(buffer, 0, sizeof(buffer));
+  
+  // Try to get complete local name first
+  if(Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME, buffer, sizeof(buffer))) {
+    beacon["name"] = String((char*)buffer);
+  } else if(Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME, buffer, sizeof(buffer))) {
+    beacon["name"] = String((char*)buffer);
+  }
+  
+  // Parse TX power if available
+  memset(buffer, 0, sizeof(buffer));
+  if (Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_TX_POWER_LEVEL, buffer, sizeof(buffer))) {
+    beacon["tx_power"] = (int8_t)buffer[0];
+  }
+  
+  // Parse UUIDs if available
+  uint8_t uuidBuffer[32];
+  
+  // 16-bit UUIDs
+  int uuidLen = Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_16BIT_SERVICE_UUID_COMPLETE, uuidBuffer, sizeof(uuidBuffer));
+  if (uuidLen > 0) {
+    JsonArray uuids = beacon.createNestedArray("uuids_16");
+    for(int i = 0; i < uuidLen; i += 2) {
+      uint16_t uuid16;
+      memcpy(&uuid16, uuidBuffer + i, 2);
+      uuids.add(String(uuid16, HEX));
+    }
+  }
+  
+  // 128-bit UUIDs
+  memset(uuidBuffer, 0, sizeof(uuidBuffer));
+  uuidLen = Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_128BIT_SERVICE_UUID_COMPLETE, uuidBuffer, sizeof(uuidBuffer));
+  if (uuidLen > 0) {
+    JsonArray uuids = beacon.createNestedArray("uuids_128");
+    for(int i = 0; i < uuidLen; i += 16) {
+      String uuid128 = "";
+      for(int j = 0; j < 16 && (i + j) < uuidLen; j++) {
+        if (j > 0 && (j % 2 == 0)) uuid128 += "-";
+        uuid128 += String(uuidBuffer[i + j], HEX);
+      }
+      uuids.add(uuid128);
+    }
+  }
+  
+  // Service Data
+  memset(uuidBuffer, 0, sizeof(uuidBuffer));
+  uuidLen = Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_SERVICE_DATA, uuidBuffer, sizeof(uuidBuffer));
+  if (uuidLen > 0) {
+    JsonArray serviceData = beacon.createNestedArray("service_data");
+    for(int i = 0; i < uuidLen; i++) {
+      serviceData.add(uuidBuffer[i]);
+    }
+  }
+  
+  // Parse manufacturer data if available
+  int manuLen = Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, buffer, sizeof(buffer));
+  if (manuLen > 0) {
+    JsonArray manuData = beacon.createNestedArray("md");
+    for(int i = 0; i < manuLen; i++) {
+      manuData.add(buffer[i]);
+    }
+  }
+  
+  // Parse flags if available
+  memset(buffer, 0, sizeof(buffer));
+  if (Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_FLAGS, buffer, sizeof(buffer))) {
+    beacon["flags"] = buffer[0];
+  }
+  
+  // Parse appearance if available
+  memset(buffer, 0, sizeof(buffer));
+  if (Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_APPEARANCE, buffer, sizeof(buffer))) {
+    uint16_t appearance;
+    memcpy(&appearance, buffer, 2);
+    beacon["appearance"] = appearance;
+  }
+  
+  bleBeaconsFound++;
+  //rtt.print("BLE: Beacon "); rtt.print(bleBeaconsFound); rtt.print("/"); rtt.println(deviceConfig.ble_scan_max_beacons);
+  
+  // For Softdevice v6: after received a report, scanner will be paused
+  // We need to call Scanner resume() to continue scanning
+  Bluefruit.Scanner.resume();
+}
+
+// BLE initialization function - called once in setup
+bool initializeBLE() {
+  rtt.println("Initializing BLE...");
+  
+  // Initialize BLE scanning
+  Bluefruit.begin(0, 1);
+  Bluefruit.setTxPower(4);
+
+  // Set the device name
+  Bluefruit.setName("Bluefruit52");
+
+  // Set the LED interval for blinky pattern on BLUE LED
+  Bluefruit.setConnLedInterval(250);
+  
+  rtt.println("BLE initialization completed");
+  return true;
+}
+
+void scanforbeacons(){
+  if (!deviceConfig.ble_scan_enabled) {
+    rtt.println("BLE scanning disabled in configuration");
+    return;
+  }
+
+  rtt.println("Starting BLE beacon scan");
+  rtt.print("Max beacons: "); rtt.println(deviceConfig.ble_scan_max_beacons);
+  rtt.print("Scan duration: "); rtt.print(deviceConfig.ble_scan_duration); rtt.println(" ms");
+
+  // Initialize JSON document for BLE scan data
+  bleScanDoc.clear();
+  bleBeacons = bleScanDoc.createNestedArray("beacons");
+  if (bleBeacons.isNull()) {
+    rtt.println("BLE: Failed to create beacons array");
+    return;
+  }
+
+  // Initialize scanning variables
+  bleScanning = true;
+  bleScanStartTime = millis();
+  bleBeaconsFound = 0;
+
+  // Start Central Scanning
+  Bluefruit.Scanner.setRxCallback(ble_scan_callback);
+  Bluefruit.Scanner.restartOnDisconnect(true);
+  Bluefruit.Scanner.filterRssi(-80);
+  Bluefruit.Scanner.setInterval(160, 80);       // in units of 0.625 ms
+  Bluefruit.Scanner.useActiveScan(true);        // Request scan response data
+  Bluefruit.Scanner.start(0);                   // 0 = Don't stop scanning after n seconds
+
+  rtt.println("BLE: Scanning started...");
+
+  // Wait for scan to complete (either max beacons found or timeout)
+  unsigned long scanStartTime = millis();
+  while (bleScanning && 
+         bleBeaconsFound < deviceConfig.ble_scan_max_beacons && 
+         (millis() - scanStartTime) < deviceConfig.ble_scan_duration) {
+    delay(100);
+    
+    // Check if scan duration has expired
+    if (millis() - bleScanStartTime > deviceConfig.ble_scan_duration) {
+      rtt.println("BLE: Scan duration expired");
+      break;
+    }
+  }
+
+  // Stop scanning
+  Bluefruit.Scanner.stop();
+  
+  bleScanning = false;
+
+  // Add summary information to JSON
+  bleScanDoc["count"] = bleBeaconsFound;
+  bleScanDoc["scan_duration"] = millis() - bleScanStartTime;
+  bleScanDoc["max_beacons"] = deviceConfig.ble_scan_max_beacons;
+  bleScanDoc["ts"] = millis();
+
+  // Serialize to string
+  String bleScanJson;
+  serializeJson(bleScanDoc, bleScanJson);
+
+  // Save to sensor data
+  sensorData.ble_scan_data = bleScanJson;
+
+  rtt.print("BLE: Scan completed. Found "); rtt.print(bleBeaconsFound); rtt.println(" beacons");
+  rtt.print("BLE: JSON length: "); rtt.println(bleScanJson.length());
 }
 
 void blinkLED(int times, int delayon, int delayoff, bool green){
@@ -61,20 +292,6 @@ void displaySensorDataSummary() {
   rtt.print("%RH, P="); rtt.print(sensorData.pressure, 1);
   rtt.print("hPa, GPS="); rtt.print(sensorData.gps_used_satellites);
   rtt.println(" sats");
-  if (modemInitialized) {
-    rtt.print("Modem: ");
-    rtt.print("ID="); rtt.print(sensorData.modem_id);
-    rtt.print(", Temp="); rtt.print(sensorData.modem_temperature, 1);
-    rtt.print("°C, SIM="); rtt.print(sensorData.sim_card_id);
-    rtt.print(", Net="); rtt.print(sensorData.network_name);
-    rtt.print(", Link="); rtt.print(sensorData.link_type);
-    rtt.print(", Band="); rtt.print(sensorData.network_band);
-    rtt.print(", Channel="); rtt.print(sensorData.network_channel);
-    rtt.print(", Quality="); rtt.print(sensorData.signal_quality);
-    rtt.print(", Strength="); rtt.print(sensorData.signal_strength);
-    rtt.print(" dBm");
-    rtt.println();
-  }
 }
 
 void resetI2CBus() {
@@ -112,14 +329,10 @@ void sensorpwr(bool onoff){
 void wd_handler() {
   //digitalWrite(GREEN_LED,LOW);
   digitalWrite(DONE,HIGH);
-  nrf_delay_us(160);
+  delayMicroseconds(160);
   digitalWrite(DONE,LOW);
   //digitalWrite(GREEN_LED,HIGH);
   wdcounter++;
-}
-
-void sampleallsensors(){
-  collectAllSensorData();
 }
 
 void collectAllSensorData(){
@@ -197,7 +410,7 @@ void powerdownesp(){
 
 void softpwrup(){
   digitalWrite(MODEM_ESP_PWR,HIGH);
-  nrf_delay_us(500);
+  delay(1);
   digitalWrite(MODEM_ESP_PWR,LOW);
   delay(2);
   digitalWrite(MODEM_ESP_PWR,HIGH);
@@ -347,7 +560,6 @@ bool readTemperatureHumidity(float& temperature, float& humidity) {
 
 bool readPressure(float& pressure, float& sensorTemp) {
   lps22hb.begin();
-  lps22hb.Enable();
   lps22hb.GetPressure(&pressure);
   lps22hb.GetTemperature(&sensorTemp);
   lps22hb.end();
@@ -443,82 +655,253 @@ bool disconnectFromNetwork() {
   return true;
 }
 
+// Helper function to validate modem connection before large transfers
+bool validateModemConnection() {
+  if (!modemInitialized) {
+    return false;
+  }
+  
+  // Check if modem is still responsive
+  if (!modem.isNetworkConnected()) {
+    rtt.println("Network connection lost, reconnecting...");
+    if (!connectToNetwork()) {
+      return false;
+    }
+  }
+  
+  // Check signal quality
+  int signalQuality = modem.getSignalQuality();
+  if (signalQuality == 99) {
+    rtt.println("Poor signal quality, may affect large transfers");
+  }
+  
+  return true;
+}
+
 bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) {
+  rtt.println("Starting HTTP transmission...");
+  
   if (!modemInitialized) {
     rtt.println("Modem not initialized");
     return false;
   }
+  
+  // Validate modem connection
+  if (!validateModemConnection()) {
+    rtt.println("Modem connection validation failed");
+    return false;
+  }
+  
   if (!modem.isGprsConnected()) {
     rtt.println("Not connected to network");
     return false;
   }
-  
-  TinyGsmClient client(modem);
-  HttpClient http(client, config.server, config.port);
-  
-  // Create JSON document with estimated size
-  StaticJsonDocument<1024> doc;
-  
-  // Build JSON object efficiently
-  doc["timestamp"] = data.timestamp;
-  doc["lux"] = data.lux;
-  doc["battery"] = round(data.battery_voltage * 100) / 100.0; // Round to 2 decimal places
-  doc["temp"] = round(data.case_temperature * 10) / 10.0; // Round to 1 decimal place
-  doc["humidity"] = round(data.case_humidity * 10) / 10.0; // Round to 1 decimal place
-  doc["pressure"] = round(data.pressure * 100) / 100.0; // Round to 2 decimal places
-  doc["pressure_temp"] = round(data.pressure_sensor_temp * 100) / 100.0; // Round to 2 decimal places
-  doc["acc1_x"] = data.acc1_x;
-  doc["acc1_y"] = data.acc1_y;
-  doc["acc1_z"] = data.acc1_z;
-  doc["acc2_x"] = data.acc2_x;
-  doc["acc2_y"] = data.acc2_y;
-  doc["acc2_z"] = data.acc2_z;
-  doc["gps_lat"] = round(data.gps_latitude * 100000000) / 100000000.0; // Round to 8 decimal places
-  doc["gps_lon"] = round(data.gps_longitude * 100000000) / 100000000.0; // Round to 8 decimal places
-  doc["gps_speed"] = data.gps_speed;
-  doc["gps_alt"] = data.gps_altitude;
-  doc["gps_sat_vis"] = data.gps_visible_satellites;
-  doc["gps_sat_used"] = data.gps_used_satellites;
-  doc["gps_accuracy"] = data.gps_accuracy;
-  doc["wakeup_reason"] = data.wakeup_reason;
-  doc["watchdog_counter"] = data.watchdog_counter;
-  doc["modem_id"] = data.modem_id.length() > 0 ? data.modem_id : "unknown";
-  doc["modem_temp"] = round(data.modem_temperature * 10) / 10.0; // Round to 1 decimal place
-  doc["sim_id"] = data.sim_card_id.length() > 0 ? data.sim_card_id : "unknown";
-  doc["network_name"] = data.network_name.length() > 0 ? data.network_name : "unknown";
-  doc["network_id"] = data.network_id.length() > 0 ? data.network_id : "unknown";
-  doc["link_type"] = data.link_type.length() > 0 ? data.link_type : "unknown";
-  doc["signal_quality"] = data.signal_quality;
-  doc["signal_strength"] = data.signal_strength;
-  doc["network_registration_status"] = data.network_registration_status;
-  doc["network_band"] = data.network_band.length() > 0 ? data.network_band : "unknown";
-  doc["network_channel"] = data.network_channel;
-  doc["network_operator_code"] = data.network_operator_code.length() > 0 ? data.network_operator_code : "unknown";
-  
-  // Serialize JSON to string efficiently
-  String jsonData;
-  serializeJson(doc, jsonData);
-  
-  rtt.print("JSON data length: "); rtt.println(jsonData.length());
-  
-  http.beginRequest();
-  http.post(config.endpoint);
-  http.sendHeader("Content-Type", "application/json");
-  http.sendHeader("Content-Length", jsonData.length());
-  http.beginBody();
-  http.print(jsonData);
-  http.endRequest();
-  
-  int statusCode = http.responseStatusCode();
-  http.stop();
-  
-  if (statusCode >= 200 && statusCode < 300) {
-    lastTransmissionTime = millis();
-    return true;
-  } else {
-    rtt.print("HTTP error: "); rtt.println(statusCode);
-    return false;
+
+  // Try up to 3 times
+  for (int attempt = 1; attempt <= 3; attempt++) {
+    rtt.print("HTTP attempt "); rtt.print(attempt); rtt.println("/3");
+    
+    TinyGsmClient client(modem);
+    HttpClient http(client, config.server, config.port);
+    
+    // Set longer timeout for large requests
+    http.setTimeout(60000); // 60 second timeout
+    
+    // Create JSON document with larger size for complex data
+    DynamicJsonDocument doc(32000); // Increased size for large payloads
+    
+    // Build JSON object efficiently
+    doc["ts"] = data.timestamp;
+    doc["lx"] = data.lux;
+    doc["bat"] = round(data.battery_voltage * 100) / 100.0;
+    doc["tmp"] = round(data.case_temperature * 10) / 10.0;
+    doc["hum"] = round(data.case_humidity * 10) / 10.0;
+    doc["prs"] = round(data.pressure * 100) / 100.0;
+    doc["pt"] = round(data.pressure_sensor_temp * 100) / 100.0;
+    doc["a1x"] = data.acc1_x;
+    doc["a1y"] = data.acc1_y;
+    doc["a1z"] = data.acc1_z;
+    doc["a2x"] = data.acc2_x;
+    doc["a2y"] = data.acc2_y;
+    doc["a2z"] = data.acc2_z;
+    doc["glt"] = round(data.gps_latitude * 100000000) / 100000000.0;
+    doc["gln"] = round(data.gps_longitude * 100000000) / 100000000.0;
+    doc["gsp"] = data.gps_speed;
+    doc["gal"] = data.gps_altitude;
+    doc["gsv"] = data.gps_visible_satellites;
+    doc["gsu"] = data.gps_used_satellites;
+    doc["gac"] = data.gps_accuracy;
+    doc["wkr"] = data.wakeup_reason;
+    doc["wdc"] = data.watchdog_counter;
+    doc["mid"] = data.modem_id.length() > 0 ? data.modem_id : "unknown";
+    doc["mt"] = round(data.modem_temperature * 10) / 10.0;
+    doc["sid"] = data.sim_card_id.length() > 0 ? data.sim_card_id : "unknown";
+    doc["nn"] = data.network_name.length() > 0 ? data.network_name : "unknown";
+    doc["nid"] = data.network_id.length() > 0 ? data.network_id : "unknown";
+    doc["lt"] = data.link_type.length() > 0 ? data.link_type : "unknown";
+    doc["sq"] = data.signal_quality;
+    doc["ss"] = data.signal_strength;
+    doc["nrs"] = data.network_registration_status;
+    doc["nb"] = data.network_band.length() > 0 ? data.network_band : "unknown";
+    doc["nc"] = data.network_channel;
+    doc["noc"] = data.network_operator_code.length() > 0 ? data.network_operator_code : "unknown";
+    
+    // Add WiFi scan data if available
+    if (data.wifi_scan_data.length() > 0) {
+      doc["wifi"] = data.wifi_scan_data;
+    }
+    
+    // Add BLE scan data if available
+    if (data.ble_scan_data.length() > 0) {
+      doc["ble"] = data.ble_scan_data;
+    }
+    
+    // Calculate JSON size first to check if it fits
+    size_t jsonSize = measureJson(doc);
+    rtt.print("JSON size: "); rtt.print(jsonSize); rtt.println(" bytes");
+    
+    // Optimize scan data if JSON is too large
+    optimizeScanData(doc, 30000); // 30KB limit
+    
+    // Recalculate size after optimization
+    jsonSize = measureJson(doc);
+    rtt.print("Final JSON size: "); rtt.print(jsonSize); rtt.println(" bytes");
+    
+    if (jsonSize > 30000) { // Safety check
+      rtt.println("JSON too large, truncating scan data");
+      // Remove large scan data if JSON is too big
+      if (doc.containsKey("wifi")) doc.remove("wifi");
+      if (doc.containsKey("ble")) doc.remove("ble");
+      jsonSize = measureJson(doc);
+      rtt.print("Truncated JSON size: "); rtt.print(jsonSize); rtt.println(" bytes");
+    }
+    
+    // Serialize JSON to string with error checking
+    String jsonData;
+    jsonData.reserve(jsonSize + 100); // Reserve memory to avoid fragmentation
+    
+    if (serializeJson(doc, jsonData) == 0) {
+      rtt.println("JSON serialization failed");
+      http.stop();
+      return false;
+    }
+    
+    // Validate JSON format
+    if (jsonData.length() == 0) {
+      rtt.println("Error: Empty JSON data");
+      http.stop();
+      return false;
+    }
+    
+    if (!jsonData.startsWith("{") || !jsonData.endsWith("}")) {
+      rtt.println("Error: Invalid JSON format");
+      http.stop();
+      return false;
+    }
+    
+    rtt.print("Final JSON length: "); rtt.println(jsonData.length());
+    
+    // Send request using the optimized function for large payloads
+    if (!sendLargeJsonData(http, doc, config.endpoint)) {
+      rtt.println("Failed to send JSON data");
+      http.stop();
+      if (attempt < 3) {
+        delay(2000);
+        continue;
+      }
+      return false;
+    }
+    
+    // Wait for response with proper timeout handling
+    unsigned long startTime = millis();
+    int statusCode = -1;
+    bool responseReceived = false;
+    
+    while (millis() - startTime < 45000) { // 45 second timeout
+      if (http.available()) {
+        statusCode = http.responseStatusCode();
+        responseReceived = true;
+        break;
+      }
+      delay(50); // Shorter delay for faster response
+    }
+    
+    if (!responseReceived) {
+      rtt.println("HTTP request timeout");
+      http.stop();
+      if (attempt < 3) {
+        delay(2000);
+        continue;
+      }
+      return false;
+    }
+    
+    // Read complete HTTP response with proper handling of chunked transfer
+    String responseBody = readCompleteHttpResponse(http, 30000);
+    
+    rtt.print("Response length: "); rtt.println(responseBody.length());
+    // Only print first 200 characters to avoid flooding the log
+    if (responseBody.length() > 200) {
+      rtt.print("Response (first 200 chars): "); rtt.println(responseBody.substring(0, 200));
+    } else {
+      rtt.print("Response: "); rtt.println(responseBody);
+    }
+    
+    http.stop();
+    
+    if (statusCode >= 200 && statusCode < 300) {
+      lastTransmissionTime = millis();
+      rtt.print("HTTP success: "); rtt.println(statusCode);
+      
+      // Parse server response if it contains JSON
+      if (responseBody.indexOf('{') != -1) {
+        DynamicJsonDocument responseDoc(12288); // 12KB for response parsing (increased from 2KB)
+        if (parseServerResponse(responseBody, responseDoc)) {
+          // Extract useful information from server response
+          if (responseDoc.containsKey("status")) {
+            String status = responseDoc["status"];
+            rtt.print("Server status: "); rtt.println(status);
+          }
+          if (responseDoc.containsKey("ts")) {
+            unsigned long serverTime = responseDoc["ts"];
+            rtt.print("Server timestamp: "); rtt.println(serverTime);
+          }
+          if (responseDoc.containsKey("processed")) {
+            bool dataProcessed = responseDoc["processed"];
+            rtt.print("Data processed: "); rtt.println(dataProcessed ? "Yes" : "No");
+          }
+          if (responseDoc.containsKey("fields")) {
+            int fieldCount = responseDoc["fields"];
+            rtt.print("Fields processed: "); rtt.println(fieldCount);
+          }
+          if (responseDoc.containsKey("log")) {
+            String logFile = responseDoc["log"];
+            rtt.print("Data logged to: "); rtt.println(logFile);
+          }
+          if (responseDoc.containsKey("error")) {
+            String error = responseDoc["error"];
+            rtt.print("Server error: "); rtt.println(error);
+          }
+        } else {
+          rtt.println("Failed to parse server JSON response");
+        }
+      } else {
+        rtt.println("No JSON data found in server response");
+      }
+      
+      return true;
+    } else {
+      rtt.print("HTTP error: "); rtt.println(statusCode);
+      if (attempt < 3) {
+        rtt.println("Retrying...");
+        delay(3000); // Longer delay between retries
+        continue;
+      }
+    }
   }
+  
+  rtt.println("All HTTP attempts failed");
+  return false;
 }
 
 bool sendSensorDataToServer(const SensorData& data) {
@@ -537,15 +920,15 @@ bool sendSensorDataToServer(const SensorData& data) {
 void manageModemLifecycle() {
   unsigned long currentTime = millis();
   if (lastTransmissionTime == 0 || (currentTime - lastTransmissionTime >= deviceConfig.transmission_interval)) {
+    rtt.flush();
     rtt.println("Transmitting sensor data...");
-    if (!modemInitialized) {
-      if (!initializeModem()) {
-        rtt.println("Failed to initialize modem");
-        return;
-      }
+    if (!initializeModemIfNeeded()) {
+      rtt.println("Failed to initialize modem");
+      return;
     }
     bool networkConnected = modem.isGprsConnected();
     if (!networkConnected) {
+      rtt.println("Network not connected, connecting...");
       if (!connectToNetwork()) {
         rtt.println("Failed to connect to network");
         return;
@@ -582,6 +965,12 @@ void manageModemLifecycle() {
     } else {
       rtt.println("Data transmission failed");
       blinkLED(4, 200, 400, false);
+    }
+    
+    // Shutdown modem between loops if configured
+    if (deviceConfig.modem_shutdown_between_loops) {
+      rtt.println("Shutting down modem between loops...");
+      shutdownModem();
     }
   }
 }
@@ -860,17 +1249,16 @@ bool modemFileRead(String& data, int length) {
   if (length <= 0) {
     length = 1024;
   }
-  int currentPos;
   if (!modemFileSeek(0, 0)) {
     rtt.println("Failed to seek to beginning of file");
     return false;
   }
   while (modem.stream.available()) { modem.stream.read(); }
-  int lastwd = wdcounter;
-  while(lastwd == wdcounter){
-    nrf_delay_us(200);
-  }
-  delay(20);
+  //int lastwd = wdcounter;
+  //while(lastwd == wdcounter){
+  //  nrf_delay_us(200);
+  //}
+  //delay(20);
   // rtt.print("Reading "); rtt.print(length); rtt.println(" bytes");
   modem.sendAT(GF("+QFREAD="), currentFileHandle, GF(","), length);
   String response = "";
@@ -1033,7 +1421,7 @@ int modemFileSize(const String& filename) {
 
 bool saveConfigToModem(const ModemConfig& config) {
   rtt.println("Saving configuration to modem...");
-  StaticJsonDocument<1024> doc;
+  DynamicJsonDocument doc(16000);
   doc["device_name"] = config.device_name;
   doc["transmission_interval"] = config.transmission_interval;
   doc["enable_gps"] = config.enable_gps;
@@ -1046,6 +1434,12 @@ bool saveConfigToModem(const ModemConfig& config) {
   doc["password"] = config.password;
   doc["enable_storage"] = config.enable_storage;
   doc["max_stored_files"] = config.max_stored_files;
+  doc["wifi_scan_enabled"] = config.wifi_scan_enabled;
+  doc["wifi_scan_max_networks"] = config.wifi_scan_max_networks;
+  doc["ble_scan_enabled"] = config.ble_scan_enabled;
+  doc["ble_scan_max_beacons"] = config.ble_scan_max_beacons;
+  doc["ble_scan_duration"] = config.ble_scan_duration;
+  doc["modem_shutdown_between_loops"] = config.modem_shutdown_between_loops;
   String configJson = "";
   serializeJson(doc, configJson);
   delay(10);
@@ -1085,7 +1479,7 @@ bool loadConfigFromModem(ModemConfig& config) {
     return false;
   }
   modemFileClose();
-  StaticJsonDocument<512> doc;
+  DynamicJsonDocument doc(16000);
   DeserializationError error = deserializeJson(doc, configData);
   if (error) {
     rtt.print("JSON parsing failed: ");
@@ -1129,31 +1523,48 @@ bool loadConfigFromModem(ModemConfig& config) {
   if (doc.containsKey("max_stored_files")) {
     config.max_stored_files = doc["max_stored_files"].as<int>();
   }
-  rtt.println("Configuration loaded successfully");
+  if (doc.containsKey("wifi_scan_enabled")) {
+    config.wifi_scan_enabled = doc["wifi_scan_enabled"].as<bool>();
+  }
+  if (doc.containsKey("wifi_scan_max_networks")) {
+    config.wifi_scan_max_networks = doc["wifi_scan_max_networks"].as<int>();
+  }
+  if (doc.containsKey("ble_scan_enabled")) {
+    config.ble_scan_enabled = doc["ble_scan_enabled"].as<bool>();
+  }
+  if (doc.containsKey("ble_scan_max_beacons")) {
+    config.ble_scan_max_beacons = doc["ble_scan_max_beacons"].as<int>();
+  }
+  if (doc.containsKey("ble_scan_duration")) {
+    config.ble_scan_duration = doc["ble_scan_duration"].as<unsigned long>();
+  }
+  if (doc.containsKey("modem_shutdown_between_loops")) {
+    config.modem_shutdown_between_loops = doc["modem_shutdown_between_loops"].as<bool>();
+  }
+  //rtt.println("Configuration loaded successfully");
   return true;
 }
 
 void printConfig(const ModemConfig& config) {
-  rtt.println("|----------------------------------|");
-  rtt.println("| Current Configuration           |");
-  rtt.println("|----------------------------------|");
   rtt.print("Device Name: "); rtt.println(config.device_name);
   rtt.print("Transmission Interval: "); rtt.print(config.transmission_interval); rtt.println(" ms");
   rtt.print("GPS Enabled: "); rtt.println(config.enable_gps ? "Yes" : "No");
   rtt.print("GPS Timeout: "); rtt.print(config.gps_timeout); rtt.println(" ms");
+  rtt.print("WiFi Scan Enabled: "); rtt.println(config.wifi_scan_enabled ? "Yes" : "No");
+  rtt.print("WiFi Max Networks: "); rtt.println(config.wifi_scan_max_networks);
+  rtt.print("BLE Scan Enabled: "); rtt.println(config.ble_scan_enabled ? "Yes" : "No");
+  rtt.print("BLE Max Beacons: "); rtt.println(config.ble_scan_max_beacons);
+  rtt.print("BLE Scan Duration: "); rtt.print(config.ble_scan_duration); rtt.println(" ms");
+  rtt.print("Modem Shutdown Between Loops: "); rtt.println(config.modem_shutdown_between_loops ? "Yes" : "No");
   rtt.print("Server URL: "); rtt.println(config.server_url);
   rtt.print("Server Endpoint: "); rtt.println(config.server_endpoint);
   rtt.print("Server Port: "); rtt.println(config.server_port);
   rtt.print("APN: "); rtt.println(config.apn);
   rtt.print("Storage Enabled: "); rtt.println(config.enable_storage ? "Yes" : "No");
   rtt.print("Max Stored Files: "); rtt.println(config.max_stored_files);
-  rtt.println("|----------------------------------|");
 }
 
 void LoadDeviceConfig() {
-  rtt.println("|----------------------------------|");
-  rtt.println("| Loading device configuration     |");
-  rtt.println("|----------------------------------|");
   if(saveConfig) {
     ModemConfig newconfig;
     rtt.println("Saving new configuration:");
@@ -1179,11 +1590,12 @@ bool initializeESPSerial() {
     return true;
   }
   rtt.println("Initializing ESP serial communication...");
-  pinMode(ESP_TXD, OUTPUT);
-  pinMode(ESP_RXD, INPUT);
+  Serial2.begin(115200);
+  //pinMode(ESP_TXD, OUTPUT);
+  //pinMode(ESP_RXD, INPUT);
   powerupESP();
-  delay(1000);
-  digitalWrite(ESP_TXD, HIGH);
+  delay(2000);
+  //digitalWrite(ESP_TXD, HIGH);
   espSerialInitialized = true;
   return true;
 }
@@ -1225,17 +1637,6 @@ void powerdownESP() {
   rtt.println("ESP powered down successfully");
 }
 
-void uartSendByte(uint8_t byte) {
-  digitalWrite(ESP_TXD, LOW);
-  delayMicroseconds(8);
-  for (int i = 0; i < 8; i++) {
-    digitalWrite(ESP_TXD, (byte >> i) & 0x01);
-    delayMicroseconds(8);
-  }
-  digitalWrite(ESP_TXD, HIGH);
-  delayMicroseconds(8);
-}
-
 bool sendCommandToESP(const String& command) {
   if (!espSerialInitialized) {
     rtt.println("ESP serial not initialized");
@@ -1244,119 +1645,92 @@ bool sendCommandToESP(const String& command) {
   rtt.print("Sending to ESP: "); rtt.println(command);
   String cmd = command + "\r\n";
   delayMicroseconds(100);
-  for (size_t i = 0; i < cmd.length(); i++) {
-    uartSendByte(cmd.charAt(i));
-  }
+  Serial2.write(cmd.c_str(), cmd.length());
   return true;
 }
 
-bool testESPConnection() {
-  if (!initializeESPSerial()) {
-    rtt.println("Failed to initialize ESP serial");
-    return false;
+void ScanForWiFiNetworks() {
+  if (!deviceConfig.wifi_scan_enabled) {
+   return;
   }
-  rtt.println("Sending test command to ESP...");
-  String response;
-  if (sendESPCommandAndGetResponse("AT", response, 5000)) {
-    return true;
-  } else {
-    rtt.println("No valid response from ESP");
-    return false;
-  }
-}
-
-void testESPCommunication() {
-  rtt.println("|----------------------------------|");
-  rtt.println("| Testing ESP Communication       |");
-  rtt.println("|----------------------------------|");
-  powerupESP();
-  delay(200);
   if (initializeESPSerial()) {
-    if (testESPConnection()) {
-      rtt.println("ESP communication test successful!");
-      rtt.println("Testing additional ESP commands...");
-      String response;
-      if (sendESPCommandAndGetResponse("AT+GMR", response, 5000)) {
-        rtt.println("ESP Version command successful:");
-        rtt.println(response);
-      } else {
-        rtt.println("ESP Version command failed");
-        rtt.println(response);
-      }
+    String response;
+    if (sendESPCommandAndGetResponse("AT+CWLAP", response, 16000)) {
+      rtt.println("WiFi scan successful");
+      sensorData.wifi_scan_data = parseCWLAPData(response);
+      rtt.print("Length: "); rtt.println(sensorData.wifi_scan_data.length());
+      //rtt.print("JSON: "); rtt.println(sensorData.wifi_scan_data);
     } else {
-      rtt.println("ESP communication test failed");
+      rtt.println("WiFi scan failed or incomplete response");
+      rtt.println("Attempting to parse anyway:");
+      sensorData.wifi_scan_data = parseCWLAPData(response);
+      rtt.print("Length: "); rtt.println(sensorData.wifi_scan_data.length());
+      //rtt.print("JSON: "); rtt.println(sensorData.wifi_scan_data);
     }
   } else {
     rtt.println("ESP serial initialization failed");
   }
   powerdownESP();
-  rtt.println("|----------------------------------|");
 }
 
-bool readESPResponseDebug(String& response, unsigned long timeout) {
-  delayMicroseconds(10);
-  const long BAUD_RATE = 115200;
-  const int BIT_PERIOD_US = 1000000 / BAUD_RATE;
+bool readESPResponse(String& response, unsigned long timeout) {
   response = "";
   unsigned long startTime = millis();
-  unsigned long interCharTimeout = BIT_PERIOD_US * 20;
-  unsigned long lastBitTime = micros();
-  uint8_t samples[200];
-  uint8_t pos = 0;
-  for (int i = 0; i < 200; i++) {
-    samples[i] = 0;
-  }
-  while (millis() - startTime < timeout) {
-    while (digitalRead(ESP_RXD) == HIGH) {
-      if (micros() - lastBitTime > interCharTimeout) {
-        delayMicroseconds(100);
-        for(int i = 0; i < pos; i++) {
-          response += (char)samples[i];
-          delayMicroseconds(10);
+  bool foundOK = false;
+  bool foundError = false;
+  
+  while (millis() - startTime < timeout && !foundOK && !foundError) {
+    while (Serial2.available()) {
+      char c = Serial2.read();
+      response += c;
+      
+      // Check for \r\nOK\r\n pattern
+      if (response.length() >= 6) {
+        int lastIndex = response.length() - 1;
+        if (response.charAt(lastIndex) == '\n' && 
+            response.charAt(lastIndex - 1) == '\r' &&
+            response.charAt(lastIndex - 2) == 'K' &&
+            response.charAt(lastIndex - 3) == 'O' &&
+            response.charAt(lastIndex - 4) == '\n' &&
+            response.charAt(lastIndex - 5) == '\r') {
+          foundOK = true;
+          break;
         }
-        delayMicroseconds(100);
-        return response.length() > 0;
       }
-      if (millis() - startTime > timeout) {
-        rtt.println("Overall timeout");
-        return response.length() > 0;
+      
+      // Check for ERROR pattern
+      if (response.length() >= 7) {
+        int lastIndex = response.length() - 1;
+        if (response.charAt(lastIndex) == '\n' && 
+            response.charAt(lastIndex - 1) == '\r' &&
+            response.charAt(lastIndex - 2) == 'R' &&
+            response.charAt(lastIndex - 3) == 'O' &&
+            response.charAt(lastIndex - 4) == 'R' &&
+            response.charAt(lastIndex - 5) == 'R' &&
+            response.charAt(lastIndex - 6) == 'E') {
+          foundError = true;
+          break;
+        }
       }
     }
-    unsigned long byteStartTime = micros();
-    lastBitTime = byteStartTime;
-    uint8_t currentByte = 0;
-    delayMicroseconds(BIT_PERIOD_US + BIT_PERIOD_US / 2 - 2);
-    for (int i = 0; i < 8; ++i) {
-      if (digitalRead(ESP_RXD) == HIGH) {
-        currentByte |= (1 << i);
-      }
-      if(i != 7)delayMicroseconds(BIT_PERIOD_US);
-    }
-    nrf_delay_us(4);
-    lastBitTime = micros();
-    samples[pos] = currentByte;
-    pos++;
-    if (!(digitalRead(ESP_RXD) == HIGH)) {
-      rtt.println("Frame error: Stop bit was LOW");
-      rtt.println((char)samples[pos - 1]);
+    
+    // Small delay to prevent busy waiting
+    if (!foundOK && !foundError) {
+      delayMicroseconds(100);
     }
   }
-  rtt.println("Timeout");
-  rtt.println(pos);
-  for (int i = 0; i < pos; i++) {
-    response += (char)samples[i];
-  }
-  rtt.println(response);
-  return response.length() > 0;
+  
+  // Return true if we found OK, false if we found ERROR or timed out
+  return foundOK;
 }
 
 bool parseESPResponse(const String& rawResponse, String& filteredResponse, bool& hasOK) {
   filteredResponse = "";
   hasOK = false;
-  String lines[20];
+  String lines[40];
   int lineCount = 0;
   size_t startPos = 0;
-  for (size_t i = 0; i < rawResponse.length() && lineCount < 20; i++) {
+  for (size_t i = 0; i < rawResponse.length() && lineCount < 40; i++) {
     if (rawResponse.charAt(i) == '\n' || rawResponse.charAt(i) == '\r') {
       if (i > startPos) {
         lines[lineCount] = rawResponse.substring(startPos, i);
@@ -1372,6 +1746,7 @@ bool parseESPResponse(const String& rawResponse, String& filteredResponse, bool&
   for (int i = 0; i < lineCount; i++) {
     String line = lines[i];
     line.trim();
+    delay(10);
     if (line.length() == 0) {
       continue;
     }
@@ -1398,14 +1773,10 @@ bool parseESPResponse(const String& rawResponse, String& filteredResponse, bool&
 }
 
 bool sendESPCommandAndGetResponse(const String& command, String& response, unsigned long timeout) {
-  int lastwd = wdcounter;
-  while(lastwd == wdcounter){
-    nrf_delay_us(200);
-  }
-  delay(20);
   String rawResponse;
+  Serial2.flush();
   sendCommandToESP(command);
-  readESPResponseDebug(rawResponse, timeout);
+  readESPResponse(rawResponse, timeout);
   String filteredResponse;
   bool hasOK;
   if (!parseESPResponse(rawResponse, filteredResponse, hasOK)) {
@@ -1421,9 +1792,7 @@ void checkModemStorageSpace() {
     return;
   }
   
-  rtt.println("|----------------------------------|");
-  rtt.println("| Checking Modem Storage Space    |");
-  rtt.println("|----------------------------------|");
+  rtt.println("Checking Modem Storage Space");
   
   // Check UFS storage space
   modem.sendAT(GF("+QFLDS=\"UFS\""));
@@ -1506,4 +1875,482 @@ void checkModemStorageSpace() {
     rtt.println("UFS file information command failed or not supported");
   }
   rtt.println("|----------------------------------|");
+}
+
+// WiFi scan data parser
+String parseCWLAPData(const String& cwlapResponse) {
+  rtt.print("Input length: "); rtt.println(cwlapResponse.length());
+  delay(10);
+  
+  // Check for empty input
+  if (cwlapResponse.length() < 26) {
+    rtt.println("parseCWLAPData: Empty input, returning empty result");
+    rtt.println("parseCWLAPData: Input: "); rtt.println(cwlapResponse);
+    return "{\"count\":0,\"ts\":" + String(millis()) + "}";
+  }
+  
+  DynamicJsonDocument doc(16000);
+  
+  JsonArray networks = doc.createNestedArray("nets");
+  if (networks.isNull()) {
+    rtt.println("parseCWLAPData: Failed to create networks array");
+    return "{\"count\":0,\"ts\":" + String(millis()) + "}";
+  }
+  // Process response line by line without storing all lines
+  int networksAdded = 0;
+  size_t lineStart = 0;
+
+  for (size_t i = 0; i < cwlapResponse.length(); i++) {
+    char c = cwlapResponse.charAt(i);
+    
+    // Check for line end
+    if (c == '\n' || c == '\r') {
+      if (i > lineStart) {
+        // Extract current line
+        String line = cwlapResponse.substring(lineStart, i);
+        line.trim();
+        
+        // Check if this is a CWLAP line
+        if (line.startsWith("+CWLAP:(")) {
+          //rtt.println("parseCWLAPData: Found CWLAP line");
+          //delay(10);
+          
+          // Check line length before substring
+          if (line.length() < 9) {
+            rtt.println("parseCWLAPData: Line too short, skipping");
+            delay(10);
+            lineStart = i + 1;
+            continue;
+          }
+          
+          // Remove the +CWLAP:( prefix and ) suffix
+          String data = line.substring(8, line.length() - 1);
+
+          // Parse the comma-separated values
+          String values[12]; // Max 12 values per network
+          int valueCount = 0;
+          bool inQuotes = false;
+          size_t valueStart = 0;
+          
+          //rtt.println("parseCWLAPData: Starting value parsing");
+          delay(10);
+          
+          for (size_t j = 0; j < data.length() && valueCount < 12; j++) {
+            char dataChar = data.charAt(j);
+            
+            if (dataChar == '"') {
+              inQuotes = !inQuotes;
+            } else if (dataChar == ',' && !inQuotes) {
+              if (j > valueStart) {
+                values[valueCount] = data.substring(valueStart, j);
+                //rtt.print("parseCWLAPData: Value "); rtt.print(valueCount); rtt.print(": "); rtt.println(values[valueCount]);
+                valueCount++;
+              }
+              valueStart = j + 1;
+            }
+          }
+          
+          // Add the last value
+          if (valueStart < data.length()) {
+            values[valueCount] = data.substring(valueStart);
+            valueCount++;
+          }
+          
+          //rtt.print("parseCWLAPData: Total values parsed: "); rtt.println(valueCount);
+          
+          // Create network object if we have enough values
+          if (valueCount >= 4) {
+            
+            JsonObject network = networks.createNestedObject();
+            if (network.isNull()) {
+              rtt.println("parseCWLAPData: Failed to create network object");
+              continue;
+            }
+            
+            // Parse encryption type
+            int enc = values[0].toInt();
+            network["enc"] = enc;
+            
+            // Parse SSID (remove quotes)
+            String ssid = values[1];
+            if (ssid.startsWith("\"") && ssid.endsWith("\"") && ssid.length() > 2) {
+              ssid = ssid.substring(1, ssid.length() - 1);
+            }
+            network["ssid"] = ssid;
+            
+            // Parse RSSI
+            int rssi = values[2].toInt();
+            network["rssi"] = rssi;
+            
+            // Parse MAC address (remove quotes)
+            String mac = values[3];
+            if (mac.startsWith("\"") && mac.endsWith("\"") && mac.length() > 2) {
+              mac = mac.substring(1, mac.length() - 1);
+            }
+            network["mac"] = mac;
+            
+            // Parse channel
+            if (valueCount > 4) {
+              network["ch"] = values[4].toInt();
+            }
+            
+            // Parse authentication mode
+            if (valueCount > 5) {
+              network["auth"] = values[5].toInt();
+            }
+            
+            // Parse additional fields if available (only store if non-zero)
+            if (valueCount > 6 && values[6].toInt() != 0) network["f6"] = values[6].toInt();
+            if (valueCount > 7 && values[7].toInt() != 0) network["f7"] = values[7].toInt();
+            if (valueCount > 8 && values[8].toInt() != 0) network["f8"] = values[8].toInt();
+            if (valueCount > 9 && values[9].toInt() != 0) network["f9"] = values[9].toInt();
+            if (valueCount > 10 && values[10].toInt() != 0) network["f10"] = values[10].toInt();
+            
+            networksAdded++;
+            // Check if we've reached the maximum
+            if (networksAdded >= deviceConfig.wifi_scan_max_networks) {
+              rtt.println("parseCWLAPData: Reached maximum networks, stopping");
+              break;
+            }
+          } else {
+            rtt.println("parseCWLAPData: Not enough values for network object");
+          }
+        }
+      }
+      lineStart = i + 1;
+    }
+  }
+  
+  rtt.println("parseCWLAPData: Line processing completed");
+  
+  // Add summary information
+  doc["count"] = networks.size();
+  doc["ts"] = millis();
+  
+  rtt.print("parseCWLAPData: Final network count: "); rtt.println(networks.size());
+  
+  // Serialize to string (compact format)
+  String jsonOutput = "";
+  serializeJson(doc, jsonOutput);
+  
+  rtt.print("parseCWLAPData: JSON output length: "); rtt.println(jsonOutput.length());
+  rtt.println("parseCWLAPData: Function completed successfully");
+  
+  return jsonOutput;
+}
+
+// Function to send large JSON data in a more memory-efficient way
+bool sendLargeJsonData(HttpClient& http, const DynamicJsonDocument& doc, const String& endpoint) {
+  // First, try to serialize the entire document
+  String jsonData;
+  jsonData.reserve(measureJson(doc) + 100);
+  
+  if (serializeJson(doc, jsonData) == 0) {
+    rtt.println("JSON serialization failed");
+    return false;
+  }
+  
+  // If JSON is very large (>20KB), use chunked transfer
+  if (jsonData.length() > 20000) {
+    rtt.println("Using chunked transfer for large payload");
+    
+    http.beginRequest();
+    http.post(endpoint);
+    http.sendHeader("Content-Type", "application/json");
+    http.sendHeader("Transfer-Encoding", "chunked");
+    http.sendHeader("Accept", "application/json");
+    http.sendHeader("User-Agent", "NRF-Firmware/1.0");
+    http.sendHeader("Connection", "close");
+    
+    // Send data in chunks
+    const int chunkSize = 512; // 2KB chunks
+    int totalSent = 0;
+    
+    for (size_t i = 0; i < jsonData.length(); i += chunkSize) {
+      size_t chunkLength = min(chunkSize, jsonData.length() - i);
+      String chunk = jsonData.substring(i, i + chunkLength);
+      
+      // Send chunk length in hex
+      http.print(String(chunkLength, HEX));
+      http.print("\r\n");
+      
+      // Send chunk data
+      if (http.print(chunk) != chunkLength) {
+        rtt.println("Failed to send chunk");
+        return false;
+      }
+      
+      http.print("\r\n");
+      totalSent += chunkLength;
+      
+      // Small delay to prevent overwhelming the modem
+      delay(20);
+    }
+    
+    // Send end chunk
+    http.print("0\r\n\r\n");
+    rtt.print("Sent "); rtt.print(totalSent); rtt.println(" bytes in chunks");
+    
+  } else {
+    // For smaller payloads, use regular transfer
+    http.beginRequest();
+    http.post(endpoint);
+    http.sendHeader("Content-Type", "application/json");
+    http.sendHeader("Content-Length", jsonData.length());
+    http.sendHeader("Accept", "application/json");
+    http.sendHeader("User-Agent", "NRF-Firmware/1.0");
+    http.sendHeader("Connection", "close");
+    
+    http.beginBody();
+    
+    // Send data in smaller chunks for reliability
+    const int chunkSize = 1024;
+    int totalSent = 0;
+    
+    for (size_t i = 0; i < jsonData.length(); i += chunkSize) {
+      size_t chunkLength = min(chunkSize, jsonData.length() - i);
+      String chunk = jsonData.substring(i, i + chunkLength);
+      
+      if (http.print(chunk) != chunkLength) {
+        rtt.println("Failed to send chunk");
+        return false;
+      }
+      totalSent += chunkLength;
+      delay(10);
+    }
+    
+    rtt.print("Sent "); rtt.print(totalSent); rtt.println(" bytes");
+  }
+  
+  http.endRequest();
+  return true;
+}
+
+// Function to intelligently handle large scan data
+void optimizeScanData(DynamicJsonDocument& doc, size_t maxSize) {
+  size_t currentSize = measureJson(doc);
+  
+  if (currentSize <= maxSize) {
+    return; // No optimization needed
+  }
+  
+  rtt.print("JSON size "); rtt.print(currentSize); rtt.print(" exceeds limit "); rtt.print(maxSize); rtt.println(", optimizing...");
+  
+  // First, try to truncate BLE data (usually larger)
+  if (doc.containsKey("ble")) {
+    rtt.println("Truncating BLE scan data");
+    doc.remove("ble");
+    currentSize = measureJson(doc);
+    rtt.print("After BLE removal: "); rtt.print(currentSize); rtt.println(" bytes");
+  }
+  
+  // If still too large, truncate WiFi data
+  if (currentSize > maxSize && doc.containsKey("wifi")) {
+    rtt.println("Truncating WiFi scan data");
+    doc.remove("wifi");
+    currentSize = measureJson(doc);
+    rtt.print("After WiFi removal: "); rtt.print(currentSize); rtt.println(" bytes");
+  }
+  
+  // If still too large, reduce precision of sensor data
+  if (currentSize > maxSize) {
+    rtt.println("Reducing sensor data precision");
+    
+    // Reduce GPS precision
+    if (doc.containsKey("glt")) doc["glt"] = round(doc["glt"].as<float>() * 1000000) / 1000000.0;
+    if (doc.containsKey("gln")) doc["gln"] = round(doc["gln"].as<float>() * 1000000) / 1000000.0;
+    
+    // Reduce accelerometer precision
+    if (doc.containsKey("a1x")) doc["a1x"] = round(doc["a1x"].as<float>() * 100) / 100.0;
+    if (doc.containsKey("a1y")) doc["a1y"] = round(doc["a1y"].as<float>() * 100) / 100.0;
+    if (doc.containsKey("a1z")) doc["a1z"] = round(doc["a1z"].as<float>() * 100) / 100.0;
+    if (doc.containsKey("a2x")) doc["a2x"] = round(doc["a2x"].as<float>() * 100) / 100.0;
+    if (doc.containsKey("a2y")) doc["a2y"] = round(doc["a2y"].as<float>() * 100) / 100.0;
+    if (doc.containsKey("a2z")) doc["a2z"] = round(doc["a2z"].as<float>() * 100) / 100.0;
+    
+    currentSize = measureJson(doc);
+    rtt.print("After precision reduction: "); rtt.print(currentSize); rtt.println(" bytes");
+  }
+  
+  if (currentSize <= maxSize) {
+    rtt.println("Optimization successful");
+  } else {
+    rtt.println("Warning: JSON still exceeds size limit after optimization");
+  }
+}
+
+bool waitForNextTransmission(unsigned long interval) {
+  unsigned long currentTime = millis();
+  
+  // Check if it's time for the next transmission
+  if (currentTime - lastWaitCheck >= interval) {
+    lastWaitCheck = currentTime;
+    return true; // Time to transmit
+  }
+  
+  return false; // Still waiting
+}
+
+void performBackgroundTasks() {
+  // Check battery voltage periodically
+  static unsigned long lastBatteryCheck = 0;
+  if (millis() - lastBatteryCheck > 30000) { // Check every 30 seconds
+    sensorData.battery_voltage = readBatteryVoltage();
+    lastBatteryCheck = millis();
+  }
+  
+  // Check for any pending modem operations
+  if (modemInitialized && !modem.isGprsConnected()) {
+    // Try to reconnect if disconnected
+    static unsigned long lastReconnectAttempt = 0;
+    if (millis() - lastReconnectAttempt > 60000) { // Try every minute
+      rtt.println("Attempting to reconnect to network...");
+      connectToNetwork();
+      lastReconnectAttempt = millis();
+    }
+  }
+  rtt.println("Performing background tasks");
+  
+  // Small delay to prevent busy waiting
+  delay(1000); // 1 second delay between background task checks
+}
+
+// Function to parse JSON response from server
+bool parseServerResponse(const String& response, JsonDocument& doc) {
+  // Find the start of JSON data (after headers)
+  int jsonStart = response.indexOf('{');
+  if (jsonStart == -1) {
+    rtt.println("No JSON data found in response");
+    return false;
+  }
+  
+  // Extract JSON part
+  String jsonData = response.substring(jsonStart);
+  
+  // Parse JSON
+  DeserializationError error = deserializeJson(doc, jsonData);
+  if (error) {
+    rtt.print("JSON parsing failed: ");
+    rtt.println(error.c_str());
+    return false;
+  }
+  
+  return true;
+}
+
+// Function to read complete HTTP response with larger buffer
+String readCompleteHttpResponse(HttpClient& http, unsigned long timeout) {
+  String response;
+  response.reserve(8192); // Reserve 8KB for response
+  
+  unsigned long startTime = millis();
+  bool readingBody = false;
+  bool chunkedTransfer = false;
+  int expectedLength = 0;
+  unsigned long lastDataTime = millis();
+  
+  while (millis() - startTime < timeout) {
+    if (http.available()) {
+      char c = http.read();
+      response += c;
+      lastDataTime = millis();
+      
+      // Check for chunked transfer encoding
+      if (!chunkedTransfer && response.indexOf("Transfer-Encoding: chunked") != -1) {
+        chunkedTransfer = true;
+        rtt.println("Detected chunked transfer encoding");
+      }
+      
+      // Check for content length
+      if (!readingBody && response.indexOf("Content-Length:") != -1) {
+        int lengthStart = response.indexOf("Content-Length:") + 15;
+        int lengthEnd = response.indexOf("\r\n", lengthStart);
+        if (lengthEnd != -1) {
+          String lengthStr = response.substring(lengthStart, lengthEnd);
+          lengthStr.trim();
+          expectedLength = lengthStr.toInt();
+          rtt.print("Expected content length: "); rtt.println(expectedLength);
+        }
+      }
+      
+      // Check for end of headers
+      if (!readingBody && response.indexOf("\r\n\r\n") != -1) {
+        readingBody = true;
+        rtt.println("Headers complete, reading body");
+      }
+      
+      // For chunked transfer, look for end chunk
+      if (chunkedTransfer && readingBody) {
+        if (response.indexOf("0\r\n\r\n") != -1) {
+          rtt.println("Chunked transfer complete");
+          break;
+        }
+      }
+      
+      // For regular transfer, check content length
+      else if (!chunkedTransfer && readingBody && expectedLength > 0) {
+        int bodyStart = response.indexOf("\r\n\r\n") + 4;
+        if (bodyStart > 4) {
+          int bodyLength = response.length() - bodyStart;
+          if (bodyLength >= expectedLength) {
+            rtt.print("Content length reached: "); rtt.println(bodyLength);
+            break;
+          }
+        }
+      }
+    } else {
+      // If no data for 2 seconds and we have some response, assume it's complete
+      if (readingBody && (millis() - lastDataTime) > 2000 && response.length() > 100) {
+        rtt.println("No more data for 2 seconds, assuming response complete");
+        break;
+      }
+      delay(10); // Small delay to prevent busy waiting
+    }
+  }
+  
+  rtt.print("Total response length: "); rtt.println(response.length());
+  
+  // Check if response seems complete
+  if (response.length() < 50) {
+    rtt.println("Warning: Response seems too short");
+  }
+  
+  return response;
+}
+
+// Function to properly shutdown modem with cleanup
+void shutdownModem() {
+  rtt.println("Performing complete modem shutdown...");
+  
+  // Disconnect from network first
+  if (modemInitialized && modem.isGprsConnected()) {
+    rtt.println("Disconnecting from network...");
+    disconnectFromNetwork();
+  }
+  
+  // Close any open files
+  if (fileOpen) {
+    rtt.println("Closing open files...");
+    modemFileClose();
+  }
+  
+  // Power down modem
+  if (modemon) {
+    rtt.println("Powering down modem...");
+    powerdownmodem();
+  }
+  
+  // Reset initialization flags
+  modemInitialized = false;
+  
+  rtt.println("Modem shutdown complete");
+}
+
+// Function to initialize modem if needed
+bool initializeModemIfNeeded() {
+  if (!modemInitialized) {
+    rtt.println("Modem not initialized, initializing...");
+    return initializeModem();
+  }
+  return true;
 }
