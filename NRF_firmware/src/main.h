@@ -35,6 +35,7 @@ BLEBas  blebas;  // battery
 struct ModemConfig {
   String device_name;
   unsigned long transmission_interval;
+  unsigned long transmission_interval_motion;
   bool enable_gps;
   unsigned long gps_timeout;
   String server_url;
@@ -51,11 +52,15 @@ struct ModemConfig {
   int ble_scan_max_beacons;
   unsigned long ble_scan_duration;
   bool modem_shutdown_between_loops;
+  bool motion_detection_enabled;
+  float motion_threshold;
+  bool modem_shutdown_on_motion;
   
   ModemConfig() {
     device_name = "Dev 1";
-    transmission_interval = 30000;
-    enable_gps = false;
+    transmission_interval = 3600000;
+    transmission_interval_motion = 60000;
+    enable_gps = true;
     gps_timeout = 15000;
     server_url = "api.64eng.de";
     server_endpoint = "/sensordata.php";
@@ -66,16 +71,19 @@ struct ModemConfig {
     enable_storage = true;
     max_stored_files = 10;
     wifi_scan_enabled = true;
-    wifi_scan_max_networks = 8;
+    wifi_scan_max_networks = 20;
     ble_scan_enabled = true;
-    ble_scan_max_beacons = 9;
-    ble_scan_duration = 10000;
-    modem_shutdown_between_loops = false;
+    ble_scan_max_beacons = 20;
+    ble_scan_duration = 5000;
+    modem_shutdown_between_loops = true;
+    motion_detection_enabled = true;
+    motion_threshold = 500;
+    modem_shutdown_on_motion = false;
   }
 };
 
 // BLE scanning variables
-DynamicJsonDocument bleScanDoc(8000);
+DynamicJsonDocument bleScanDoc(16000);
 JsonArray bleBeacons;
 bool bleScanning = false;
 unsigned long bleScanStartTime = 0;
@@ -84,6 +92,17 @@ int bleBeaconsFound = 0;
 void ble_scan_callback(ble_gap_evt_adv_report_t* report);
 void scanforbeacons();
 bool initializeBLE();
+
+// Global motion detection variables
+static bool globalMotionDetected = false;
+static unsigned long globalLastMotionTime = 0;
+
+// Motion detection using accelerometers
+static unsigned long lastMotionCheck = 0;
+static float lastAcc1X = 0, lastAcc1Y = 0, lastAcc1Z = 0;
+static float lastAcc2X = 0, lastAcc2Y = 0, lastAcc2Z = 0;
+float currentAcc1X, currentAcc1Y, currentAcc1Z;
+float currentAcc2X, currentAcc2Y, currentAcc2Z;
 
 bool espmodemrail = 0;
 bool espon = 0;
@@ -196,3 +215,11 @@ String readCompleteHttpResponse(HttpClient& http, unsigned long timeout);
 // Non-blocking wait functions
 bool waitForNextTransmission(unsigned long interval);
 void performBackgroundTasks();
+
+// Motion detection functions
+bool isMotionDetected();
+void triggerMotionTransmission();
+
+// Power management functions
+bool shouldKeepModemPowered();
+void logPowerManagementStatus();
