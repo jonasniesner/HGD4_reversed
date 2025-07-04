@@ -4,15 +4,16 @@
 ModemConfig deviceConfig;
 
 //set if config should be saved to modem
-bool saveConfig = false;
+bool saveConfig = true;
 
 void setup() {
   rtt.trimDownBufferFull();
-  rtt.println("|---------Starting setup---------|");
+  rtt.println("|x-------XStarting setupX-------x|");
   gpioinit(); 
   sensorData.wakeup_reason = NRF_POWER->RESETREAS;
   delay(200);
   initializeModem();
+  sensorpwr(true);
   blinkLED(1, 200, 200, true);
   //checkModemStorageSpace();
   LoadDeviceConfig();
@@ -24,7 +25,6 @@ void setup() {
 void loop() {
   lastWaitCheck = millis();
   rtt.println("|---------Starting loop---------|");
-  sensorpwr(true);
   rtt.println("Collecting sensor data");
   collectAllSensorData();
   rtt.print("WD counter ");
@@ -38,9 +38,10 @@ void loop() {
   ScanForWiFiNetworks();
   rtt.println("Managing modem lifecycle");
   manageModemLifecycle();
-  sensorpwr(false);
   rtt.println("Waiting for next transmission");
   rtt.println("Loop cycle completed.");
+  globalMotionDetected = false;
+  readAccelerometers(lastAcc1X, lastAcc1Y, lastAcc1Z, lastAcc2X, lastAcc2Y, lastAcc2Z);
   while (!waitForNextTransmission(deviceConfig.transmission_interval)) {
     performBackgroundTasks();
   }
@@ -570,6 +571,8 @@ bool readAccelerometers(float& acc1_x, float& acc1_y, float& acc1_z, float& acc2
   if (!acc1.begin() || !acc2.begin()) {
     return false;
   }
+  acc1.setRange(LIS3DH_RANGE_2_G);
+  acc2.setRange(LIS3DH_RANGE_2_G);
   acc1.read();
   acc2.read();
   acc1_x = acc1.x;
@@ -919,8 +922,6 @@ bool sendSensorDataToServer(const SensorData& data) {
 
 void manageModemLifecycle() {
   unsigned long currentTime = millis();
-  if (lastTransmissionTime == 0 || (currentTime - lastTransmissionTime >= deviceConfig.transmission_interval)) {
-    rtt.flush();
     rtt.println("Transmitting sensor data...");
     if (!initializeModemIfNeeded()) {
       rtt.println("Failed to initialize modem");
@@ -969,10 +970,15 @@ void manageModemLifecycle() {
     
     // Shutdown modem between loops if configured
     if (deviceConfig.modem_shutdown_between_loops) {
-      rtt.println("Shutting down modem between loops...");
-      shutdownModem();
+      // Check if we should keep modem on due to motion
+      if (shouldKeepModemPowered()) {
+        rtt.println("Keeping modem powered on due to motion or configuration");
+        logPowerManagementStatus();
+      } else {
+        rtt.println("Shutting down modem between loops...");
+        shutdownModem();
+      }
     }
-  }
 }
 
 bool readModemInfo() {
@@ -1424,6 +1430,7 @@ bool saveConfigToModem(const ModemConfig& config) {
   DynamicJsonDocument doc(16000);
   doc["device_name"] = config.device_name;
   doc["transmission_interval"] = config.transmission_interval;
+  doc["transmission_interval_motion"] = config.transmission_interval_motion;
   doc["enable_gps"] = config.enable_gps;
   doc["gps_timeout"] = config.gps_timeout;
   doc["server_url"] = config.server_url;
@@ -1440,6 +1447,9 @@ bool saveConfigToModem(const ModemConfig& config) {
   doc["ble_scan_max_beacons"] = config.ble_scan_max_beacons;
   doc["ble_scan_duration"] = config.ble_scan_duration;
   doc["modem_shutdown_between_loops"] = config.modem_shutdown_between_loops;
+  doc["motion_detection_enabled"] = config.motion_detection_enabled;
+  doc["motion_threshold"] = config.motion_threshold;
+  doc["modem_shutdown_on_motion"] = config.modem_shutdown_on_motion;
   String configJson = "";
   serializeJson(doc, configJson);
   delay(10);
@@ -1493,6 +1503,9 @@ bool loadConfigFromModem(ModemConfig& config) {
   if (doc.containsKey("transmission_interval")) {
     config.transmission_interval = doc["transmission_interval"].as<unsigned long>();
   }
+  if (doc.containsKey("transmission_interval_motion")) {
+    config.transmission_interval_motion = doc["transmission_interval_motion"].as<unsigned long>();
+  }
   if (doc.containsKey("enable_gps")) {
     config.enable_gps = doc["enable_gps"].as<bool>();
   }
@@ -1541,6 +1554,15 @@ bool loadConfigFromModem(ModemConfig& config) {
   if (doc.containsKey("modem_shutdown_between_loops")) {
     config.modem_shutdown_between_loops = doc["modem_shutdown_between_loops"].as<bool>();
   }
+  if (doc.containsKey("motion_detection_enabled")) {
+    config.motion_detection_enabled = doc["motion_detection_enabled"].as<bool>();
+  }
+  if (doc.containsKey("motion_threshold")) {
+    config.motion_threshold = doc["motion_threshold"].as<float>();
+  }
+  if (doc.containsKey("modem_shutdown_on_motion")) {
+    config.modem_shutdown_on_motion = doc["modem_shutdown_on_motion"].as<bool>();
+  }
   //rtt.println("Configuration loaded successfully");
   return true;
 }
@@ -1548,6 +1570,7 @@ bool loadConfigFromModem(ModemConfig& config) {
 void printConfig(const ModemConfig& config) {
   rtt.print("Device Name: "); rtt.println(config.device_name);
   rtt.print("Transmission Interval: "); rtt.print(config.transmission_interval); rtt.println(" ms");
+  rtt.print("Transmission Interval (Motion): "); rtt.print(config.transmission_interval_motion); rtt.println(" ms");
   rtt.print("GPS Enabled: "); rtt.println(config.enable_gps ? "Yes" : "No");
   rtt.print("GPS Timeout: "); rtt.print(config.gps_timeout); rtt.println(" ms");
   rtt.print("WiFi Scan Enabled: "); rtt.println(config.wifi_scan_enabled ? "Yes" : "No");
@@ -1556,6 +1579,9 @@ void printConfig(const ModemConfig& config) {
   rtt.print("BLE Max Beacons: "); rtt.println(config.ble_scan_max_beacons);
   rtt.print("BLE Scan Duration: "); rtt.print(config.ble_scan_duration); rtt.println(" ms");
   rtt.print("Modem Shutdown Between Loops: "); rtt.println(config.modem_shutdown_between_loops ? "Yes" : "No");
+  rtt.print("Motion Detection Enabled: "); rtt.println(config.motion_detection_enabled ? "Yes" : "No");
+  rtt.print("Motion Threshold: "); rtt.print(config.motion_threshold, 3); rtt.println(" g");
+  rtt.print("Modem Shutdown On Motion: "); rtt.println(config.modem_shutdown_on_motion ? "Yes" : "No");
   rtt.print("Server URL: "); rtt.println(config.server_url);
   rtt.print("Server Endpoint: "); rtt.println(config.server_endpoint);
   rtt.print("Server Port: "); rtt.println(config.server_port);
@@ -2182,8 +2208,13 @@ void optimizeScanData(DynamicJsonDocument& doc, size_t maxSize) {
 bool waitForNextTransmission(unsigned long interval) {
   unsigned long currentTime = millis();
   
+  // Choose interval based on motion detection
+  unsigned long effectiveInterval = interval;
+  if (deviceConfig.motion_detection_enabled && globalMotionDetected) {
+    effectiveInterval = deviceConfig.transmission_interval_motion;
+  }
   // Check if it's time for the next transmission
-  if (currentTime - lastWaitCheck >= interval) {
+  if (currentTime - lastWaitCheck >= effectiveInterval) {
     lastWaitCheck = currentTime;
     return true; // Time to transmit
   }
@@ -2199,20 +2230,39 @@ void performBackgroundTasks() {
     lastBatteryCheck = millis();
   }
   
-  // Check for any pending modem operations
-  if (modemInitialized && !modem.isGprsConnected()) {
-    // Try to reconnect if disconnected
-    static unsigned long lastReconnectAttempt = 0;
-    if (millis() - lastReconnectAttempt > 60000) { // Try every minute
-      rtt.println("Attempting to reconnect to network...");
-      connectToNetwork();
-      lastReconnectAttempt = millis();
+  if (deviceConfig.motion_detection_enabled && millis() - lastMotionCheck > 100) {
+    // Read current accelerometer values
+    
+    if (readAccelerometers(currentAcc1X, currentAcc1Y, currentAcc1Z, currentAcc2X, currentAcc2Y, currentAcc2Z)) {
+      // Calculate acceleration differences
+      float acc1Diff = sqrt(pow(currentAcc1X - lastAcc1X, 2) + 
+                           pow(currentAcc1Y - lastAcc1Y, 2) + 
+                           pow(currentAcc1Z - lastAcc1Z, 2));
+      float acc2Diff = sqrt(pow(currentAcc2X - lastAcc2X, 2) + 
+                           pow(currentAcc2Y - lastAcc2Y, 2) + 
+                           pow(currentAcc2Z - lastAcc2Z, 2));
+      
+      // Check if motion is detected using configured threshold
+      if (acc1Diff > deviceConfig.motion_threshold || acc2Diff > deviceConfig.motion_threshold) {
+        if (!globalMotionDetected) {
+          globalMotionDetected = true;
+          globalLastMotionTime = millis();
+          rtt.println("Motion detected!");
+          rtt.print("Acc1 diff: "); rtt.print(acc1Diff, 3);
+          rtt.print(" Acc2 diff: "); rtt.println(acc2Diff, 3);
+        }
+      }
+      lastAcc1X = currentAcc1X;
+      lastAcc1Y = currentAcc1Y;
+      lastAcc1Z = currentAcc1Z;
+      lastAcc2X = currentAcc2X;
+      lastAcc2Y = currentAcc2Y;
+      lastAcc2Z = currentAcc2Z;
     }
+    
+    lastMotionCheck = millis();
   }
-  rtt.println("Performing background tasks");
-  
-  // Small delay to prevent busy waiting
-  delay(1000); // 1 second delay between background task checks
+  delay(10);
 }
 
 // Function to parse JSON response from server
@@ -2353,4 +2403,28 @@ bool initializeModemIfNeeded() {
     return initializeModem();
   }
   return true;
+}
+// Function to check if modem should be kept powered on based on motion
+bool shouldKeepModemPowered() {
+  if (!deviceConfig.modem_shutdown_between_loops) {
+    return true; // Always keep modem on if shutdown is disabled
+  }
+  
+  if (deviceConfig.modem_shutdown_on_motion && globalMotionDetected) {
+    return true; // Keep modem on if motion detected and configured to do so
+  }
+  
+  return false; // Shutdown modem normally
+}
+
+// Function to get current power management status
+void logPowerManagementStatus() {
+  rtt.print("Power Management - Modem Shutdown: ");
+  rtt.print(deviceConfig.modem_shutdown_between_loops ? "Enabled" : "Disabled");
+  rtt.print(", Motion Shutdown: ");
+  rtt.print(deviceConfig.modem_shutdown_on_motion ? "Enabled" : "Disabled");
+  rtt.print(", Motion Detected: ");
+  rtt.print(globalMotionDetected ? "Yes" : "No");
+  rtt.print(", Keep Modem On: ");
+  rtt.println(shouldKeepModemPowered() ? "Yes" : "No");
 }

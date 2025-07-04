@@ -50,9 +50,6 @@ extern "C"
 
 #define LED_BUILTIN          GREEN_LED
 
-#define PIN_SERIAL_RX       MODEM_RXD
-#define PIN_SERIAL_TX       MODEM_TXD 
-
 #define PIN_SERIAL1_RX MODEM_RXD
 #define PIN_SERIAL1_TX MODEM_TXD
 
