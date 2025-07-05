@@ -1,0 +1,45 @@
+name: Release nRF Firmware
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  build-and-upload:
+    name: Build & Upload Firmware
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Install PlatformIO
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio
+          pip install adafruit-nrfutil
+
+      - name: Build Firmware
+        run: |
+          pio run -e hgd4
+
+      - name: Copy Production Firmware
+        run: |
+          mkdir firmware_output
+          cp .pio/build/hgd4/production.hex firmware_output/production.hex
+          cp .pio/build/hgd4/dfu.zip firmware_output/dfu.zip
+
+      - name: Rename Files with Release Tag
+        run: |
+          TAG_NAME=${{ github.event.release.tag_name }}
+          mv firmware_output/production.hex firmware_output/production-${TAG_NAME}.hex
+          mv firmware_output/dfu.zip firmware_output/dfu-${TAG_NAME}.zip
+
+      - name: Upload Firmware to Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            firmware_output/production-${{ github.event.release.tag_name }}.hex
+            firmware_output/dfu-${{ github.event.release.tag_name }}.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
