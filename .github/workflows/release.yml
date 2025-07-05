@@ -27,8 +27,8 @@ jobs:
       - name: Copy Production Firmware
         run: |
           mkdir firmware_output
-          cp /home/runner/work/HGD4_reversed/HGD4_reversed/NRF_firmware/.pio/build/hgd4/production.hex firmware_output/production.hex
-          cp /home/runner/work/HGD4_reversed/HGD4_reversed/NRF_firmware/.pio/build/hgd4/dfu.zip firmware_output/dfu.zip
+          cp NRF_firmware/.pio/build/hgd4/production.hex firmware_output/production.hex
+          cp NRF_firmware/.pio/build/hgd4/dfu.zip firmware_output/dfu.zip
 
       - name: Rename Files with Release Tag
         run: |
