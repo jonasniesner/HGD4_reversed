@@ -4,11 +4,11 @@
 ModemConfig deviceConfig;
 
 //set if config should be saved to modem
-bool saveConfig = true;
+bool saveConfig = false;
 
 void setup() {
   rtt.trimDownBufferFull();
-  rtt.println("|x-------XStarting setupX-------x|");
+  rtt.println("|---------Starting setup---------|");
   gpioinit(); 
   sensorData.wakeup_reason = NRF_POWER->RESETREAS;
   delay(200);
@@ -1483,7 +1483,7 @@ bool loadConfigFromModem(ModemConfig& config) {
     return false;
   }
   String configData;
-  if (!modemFileRead(configData, 512)) { // Read up to 512 bytes
+  if (!modemFileRead(configData, 1024)) { // Read up to 512 bytes
     rtt.println("Failed to read config data");
     modemFileClose();
     return false;
@@ -2223,11 +2223,24 @@ bool waitForNextTransmission(unsigned long interval) {
 }
 
 void performBackgroundTasks() {
-  // Check battery voltage periodically
-  static unsigned long lastBatteryCheck = 0;
-  if (millis() - lastBatteryCheck > 30000) { // Check every 30 seconds
-    sensorData.battery_voltage = readBatteryVoltage();
-    lastBatteryCheck = millis();
+  // Turn off on sw long press
+  if(digitalRead(PWR_SW_IN)){
+    rtt.println("Button pressed");
+    digitalWrite(GREEN_LED,LOW);
+    delay(2000);
+    if(digitalRead(PWR_SW_IN)){
+      rtt.println("Button short press, powering down");
+      digitalWrite(GREEN_LED,HIGH);
+      digitalWrite(RED_LED,LOW);
+      delay(10000);
+      digitalWrite(PWR_LATCH,HIGH);
+      delay(10000);
+    }
+    else{
+      digitalWrite(GREEN_LED,HIGH);
+      rtt.println("Button short press, transmitting now");
+      lastWaitCheck = 0;
+    }
   }
   
   if (deviceConfig.motion_detection_enabled && millis() - lastMotionCheck > 100) {
