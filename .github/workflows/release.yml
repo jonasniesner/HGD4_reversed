@@ -36,11 +36,11 @@ jobs:
           mv firmware_output/production.hex firmware_output/production-${TAG_NAME}.hex
           mv firmware_output/dfu.zip firmware_output/dfu-${TAG_NAME}.zip
 
-      - name: Upload Firmware to Release
-        uses: softprops/action-gh-release@v2
+      - name: Add files to release
+        uses: svenstaro/upload-release-action@v2
         with:
-          files: |
-            firmware_output/production-${{ github.event.release.tag_name }}.hex
-            firmware_output/dfu-${{ github.event.release.tag_name }}.zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          file: firmware_output/*
+          tag: ${{ github.ref }}
+          file_glob: true
+          overwrite: true
