@@ -22,7 +22,7 @@ jobs:
       - name: Build Firmware
         run: |
           cd NRF_firmware
-          pio run -e hgd4
+          pio run
 
       - name: Copy Production Firmware
         run: |
