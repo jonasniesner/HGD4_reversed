@@ -1,5 +1,5 @@
 r
-loadfile /home/jonas/Desktop/dd/HGD4_reversed-main/NRF_firmware/.pio/build/hgd6/production.hex
+loadfile /home/jonas/Desktop/dd/HGD4_reversed-main/NRF_firmware/.pio/build/hgd4/production.hex
 r
 g
 exit
