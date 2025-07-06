@@ -10,8 +10,9 @@ void setup() {
   rtt.trimDownBufferFull();
   rtt.println("|---------Starting setup---------|");
   gpioinit(); 
+  scanI2C();
+  collectAllSensorData();
   sensorData.wakeup_reason = NRF_POWER->RESETREAS;
-  delay(200);
   initializeModem();
   sensorpwr(true);
   blinkLED(1, 200, 200, true);
@@ -237,7 +238,7 @@ void scanforbeacons(){
   while (bleScanning && 
          bleBeaconsFound < deviceConfig.ble_scan_max_beacons && 
          (millis() - scanStartTime) < deviceConfig.ble_scan_duration) {
-    delay(100);
+    delay(10);
     
     // Check if scan duration has expired
     if (millis() - bleScanStartTime > deviceConfig.ble_scan_duration) {
@@ -295,15 +296,6 @@ void displaySensorDataSummary() {
   rtt.println(" sats");
 }
 
-void resetI2CBus() {
-  rtt.println("Resetting I2C bus...");
-  Wire.end();
-  delay(100);
-  Wire.begin();
-  delay(100);
-  rtt.println("I2C bus reset completed");
-}
-
 void sensorpwr(bool onoff){
   if(!onoff){
   rtt.println("Power down sensors");
@@ -321,9 +313,8 @@ void sensorpwr(bool onoff){
   rtt.println("Power up sensors");
   pinMode(SENSOR_PWR,OUTPUT);
   digitalWrite(SENSOR_PWR,HIGH);
-  delay(100);
+  delay(20);
   Wire.begin();
-  delay(50);
   }
 }
 
@@ -342,15 +333,6 @@ void collectAllSensorData(){
   sensorData.watchdog_counter = wdcounter;
   sensorData.battery_voltage = readBatteryVoltage();
   sensorData.lux = readLightSensor(0.5, 200);
-  if (sensorData.lux < 0) {
-    rtt.println("Light sensor failed, resetting I2C bus and retrying...");
-    resetI2CBus();
-    sensorData.lux = readLightSensor(0.5, 200);
-    if (sensorData.lux < 0) {
-      rtt.println("Light sensor failed after retry, using default value");
-      sensorData.lux = 0.0;
-    }
-  }
   float temp, hum;
   if (readTemperatureHumidity(temp, hum)) {
     sensorData.case_temperature = temp;
@@ -377,6 +359,8 @@ void powerdownmodem(){
     rtt.println("Modem already off");
     return;
   }
+  SerialAT.flush();
+  SerialAT.end();
   rtt.println("Powering down modem");
   rtt.println("Pressing modem power button");
   digitalWrite(MODEM_PWRKEY,HIGH);
@@ -385,23 +369,6 @@ void powerdownmodem(){
   delay(10);
   modemon = false;
   if(!espon){
-  rtt.println("Powering down espmodem rail");
-  digitalWrite(MODEM_ESP_PWR,LOW);
-  delay(50);
-  espmodemrail = false;
-  }
-}
-
-void powerdownesp(){
-  if(!espon){
-    rtt.println("ESP already off");
-    return;
-  }
-  rtt.println("Powering esp down");
-  digitalWrite(MODEM_ESP_PWR,LOW);
-  delay(50);
-  espon = false;
-  if(!modemon){
   rtt.println("Powering down espmodem rail");
   digitalWrite(MODEM_ESP_PWR,LOW);
   delay(50);
@@ -423,7 +390,7 @@ void softpwrup(){
   digitalWrite(MODEM_ESP_PWR,LOW);
   delay(2);
   digitalWrite(MODEM_ESP_PWR,HIGH);
-  delay(500);
+  delay(200);
 }
 
 void gpioinit(){
@@ -457,13 +424,13 @@ void gpioinit(){
   digitalWrite(MODEM_CON_A,LOW);
   digitalWrite(MODEM_CON_B,LOW);
   //this is not nice and needs to be done get one initial watchdog pulse. This is also time sensitive so dont mess around with it
-  delay(600);
-  for (size_t i = 0; i < 50; i++)
+  delay(20);
+  for (size_t i = 0; i < 10; i++)
   {
     digitalWrite(DONE,HIGH);
-    delay(20);
+    delay(2);
     digitalWrite(DONE,LOW);
-    delay(20);
+    delay(2);
   }
 
 }
@@ -482,7 +449,6 @@ void powerupesp(){
   softpwrup();
   }
   digitalWrite(ESP_PWR,HIGH);
-  delay(50);
   espmodemrail = true;
   espon = true;
 }
@@ -560,10 +526,9 @@ bool readTemperatureHumidity(float& temperature, float& humidity) {
 }
 
 bool readPressure(float& pressure, float& sensorTemp) {
-  lps22hb.begin();
-  lps22hb.GetPressure(&pressure);
-  lps22hb.GetTemperature(&sensorTemp);
-  lps22hb.end();
+  barometricSensor.init();
+  pressure = barometricSensor.readPressureHPA();
+  sensorTemp = barometricSensor.readTemperature();
   return (pressure != 0.0 || sensorTemp != 0.0);
 }
 
@@ -571,16 +536,38 @@ bool readAccelerometers(float& acc1_x, float& acc1_y, float& acc1_z, float& acc2
   if (!acc1.begin() || !acc2.begin()) {
     return false;
   }
+  
+  // Set range for both accelerometers
   acc1.setRange(LIS3DH_RANGE_2_G);
   acc2.setRange(LIS3DH_RANGE_2_G);
+  
+  // Read data from both accelerometers
   acc1.read();
   acc2.read();
+  
+  // Extract values
   acc1_x = acc1.x;
   acc1_y = acc1.y;
   acc1_z = acc1.z;
   acc2_x = acc2.x;
   acc2_y = acc2.y;
   acc2_z = acc2.z;
+  
+  // Power optimization: Put accelerometers in low power mode
+  acc1.enableDRDY(false);  // Disable data ready interrupt
+  acc2.enableDRDY(false);  // Disable data ready interrupt
+  
+  // Power optimization: Disable SPI after use to reduce power consumption
+  // This prevents SPI from staying active and consuming power
+  SPI.end();
+  
+  // Power optimization: Set SPI pins to input to reduce leakage current
+  //pinMode(SPI_CLK, INPUT);
+  //pinMode(SPI_MISO, INPUT);
+  //pinMode(SPI_MOSI, INPUT);
+  //pinMode(ACCL1_CS, INPUT);
+  //pinMode(ACCL2_CS, INPUT);
+  
   return true;
 }
 
@@ -590,7 +577,6 @@ bool readGPS(float& latitude, float& longitude, float& speed, float& altitude, i
   }
   unsigned long startTime = millis();
   modem.enableGPS();
-  delay(5000L); 
   int gps_year, gps_month, gps_day, gps_hour, gps_minute, gps_second;
   for (int8_t i = 3; i; i--) {
     if (millis() - startTime > deviceConfig.gps_timeout) {
@@ -605,8 +591,8 @@ bool readGPS(float& latitude, float& longitude, float& speed, float& altitude, i
       modem.disableGPS();
       return true;
     } else {
-      rtt.println("Couldn't get GPS/GNSS/GLONASS location, retrying in 5s.");
-      delay(5000L);
+      rtt.println("Couldn't get GPS/GNSS/GLONASS location, retrying in 2s.");
+      delay(2000);
     }
   }
   modem.disableGPS();
@@ -619,7 +605,6 @@ bool initializeModem() {
   }
   powerupmodem();
   SerialAT.begin(115200);
-  delay(10);
   if (!modem.init()) {
     rtt.println("Modem init failed");
     powerdownmodem();
@@ -716,19 +701,19 @@ bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) 
     // Build JSON object efficiently
     doc["ts"] = data.timestamp;
     doc["lx"] = data.lux;
-    doc["bat"] = round(data.battery_voltage * 100) / 100.0;
-    doc["tmp"] = round(data.case_temperature * 10) / 10.0;
-    doc["hum"] = round(data.case_humidity * 10) / 10.0;
-    doc["prs"] = round(data.pressure * 100) / 100.0;
-    doc["pt"] = round(data.pressure_sensor_temp * 100) / 100.0;
+    doc["bat"] = data.battery_voltage;
+    doc["tmp"] = data.case_temperature;
+    doc["hum"] = data.case_humidity;
+    doc["prs"] = data.pressure;
+    doc["pt"] = data.pressure_sensor_temp;
     doc["a1x"] = data.acc1_x;
     doc["a1y"] = data.acc1_y;
     doc["a1z"] = data.acc1_z;
     doc["a2x"] = data.acc2_x;
     doc["a2y"] = data.acc2_y;
     doc["a2z"] = data.acc2_z;
-    doc["glt"] = round(data.gps_latitude * 100000000) / 100000000.0;
-    doc["gln"] = round(data.gps_longitude * 100000000) / 100000000.0;
+    doc["glt"] = data.gps_latitude;
+    doc["gln"] = data.gps_longitude;
     doc["gsp"] = data.gps_speed;
     doc["gal"] = data.gps_altitude;
     doc["gsv"] = data.gps_visible_satellites;
@@ -737,7 +722,7 @@ bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) 
     doc["wkr"] = data.wakeup_reason;
     doc["wdc"] = data.watchdog_counter;
     doc["mid"] = data.modem_id.length() > 0 ? data.modem_id : "unknown";
-    doc["mt"] = round(data.modem_temperature * 10) / 10.0;
+    doc["mt"] = data.modem_temperature;
     doc["sid"] = data.sim_card_id.length() > 0 ? data.sim_card_id : "unknown";
     doc["nn"] = data.network_name.length() > 0 ? data.network_name : "unknown";
     doc["nid"] = data.network_id.length() > 0 ? data.network_id : "unknown";
@@ -897,7 +882,7 @@ bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) 
       rtt.print("HTTP error: "); rtt.println(statusCode);
       if (attempt < 3) {
         rtt.println("Retrying...");
-        delay(3000); // Longer delay between retries
+        delay(2000);
         continue;
       }
     }
@@ -935,7 +920,6 @@ void manageModemLifecycle() {
         return;
       }
     }
-    collectAllSensorData();
     readModemInfo();
     if (deviceConfig.enable_gps) {
       rtt.println("Acquiring GPS data...");
@@ -962,7 +946,6 @@ void manageModemLifecycle() {
     readNetworkInfo();
     if (sendSensorDataToServer(sensorData)) {
       rtt.println("Data transmission successful");
-      blinkLED(4, 200, 400, true);
     } else {
       rtt.println("Data transmission failed");
       blinkLED(4, 200, 400, false);
@@ -1101,9 +1084,6 @@ bool modemFileOpen(const String& filename, int mode) {
 
   // rtt.print("Opening file: "); rtt.print(filename); rtt.print(" mode: "); rtt.println(mode);
   modem.sendAT(GF("+QFOPEN="), filename, GF(","), mode);
-  
-  // Add delay before reading response
-  delay(200);
   
   String response = modem.stream.readString();
   // rtt.println("Open response: " + response);
@@ -1617,11 +1597,8 @@ bool initializeESPSerial() {
   }
   rtt.println("Initializing ESP serial communication...");
   Serial2.begin(115200);
-  //pinMode(ESP_TXD, OUTPUT);
-  //pinMode(ESP_RXD, INPUT);
   powerupESP();
-  delay(2000);
-  //digitalWrite(ESP_TXD, HIGH);
+  delay(200);
   espSerialInitialized = true;
   return true;
 }
@@ -1650,6 +1627,9 @@ void powerdownESP() {
     return;
   }
   rtt.println("Powering down ESP microcontroller...");
+  Serial2.flush();
+  Serial2.end();
+  pinMode(ESP_GPIO0, INPUT);
   digitalWrite(ESP_PWR, LOW);
   delay(50);
   espon = false;
@@ -2178,26 +2158,6 @@ void optimizeScanData(DynamicJsonDocument& doc, size_t maxSize) {
     rtt.print("After WiFi removal: "); rtt.print(currentSize); rtt.println(" bytes");
   }
   
-  // If still too large, reduce precision of sensor data
-  if (currentSize > maxSize) {
-    rtt.println("Reducing sensor data precision");
-    
-    // Reduce GPS precision
-    if (doc.containsKey("glt")) doc["glt"] = round(doc["glt"].as<float>() * 1000000) / 1000000.0;
-    if (doc.containsKey("gln")) doc["gln"] = round(doc["gln"].as<float>() * 1000000) / 1000000.0;
-    
-    // Reduce accelerometer precision
-    if (doc.containsKey("a1x")) doc["a1x"] = round(doc["a1x"].as<float>() * 100) / 100.0;
-    if (doc.containsKey("a1y")) doc["a1y"] = round(doc["a1y"].as<float>() * 100) / 100.0;
-    if (doc.containsKey("a1z")) doc["a1z"] = round(doc["a1z"].as<float>() * 100) / 100.0;
-    if (doc.containsKey("a2x")) doc["a2x"] = round(doc["a2x"].as<float>() * 100) / 100.0;
-    if (doc.containsKey("a2y")) doc["a2y"] = round(doc["a2y"].as<float>() * 100) / 100.0;
-    if (doc.containsKey("a2z")) doc["a2z"] = round(doc["a2z"].as<float>() * 100) / 100.0;
-    
-    currentSize = measureJson(doc);
-    rtt.print("After precision reduction: "); rtt.print(currentSize); rtt.println(" bytes");
-  }
-  
   if (currentSize <= maxSize) {
     rtt.println("Optimization successful");
   } else {
@@ -2275,7 +2235,7 @@ void performBackgroundTasks() {
     
     lastMotionCheck = millis();
   }
-  delay(10);
+  delay(100);
 }
 
 // Function to parse JSON response from server
@@ -2440,4 +2400,313 @@ void logPowerManagementStatus() {
   rtt.print(globalMotionDetected ? "Yes" : "No");
   rtt.print(", Keep Modem On: ");
   rtt.println(shouldKeepModemPowered() ? "Yes" : "No");
+}
+
+void checkAllInterruptFlags() {
+    rtt.println("=== Interrupt Status Check ===");
+    
+    // Check NVIC pending interrupts
+    bool hasPending = false;
+    for (int i = 0; i < 8; i++) {
+        if (NVIC->ISPR[i] != 0) {
+            rtt.print("NVIC pending in word "); rtt.print(i); rtt.print(": 0x"); rtt.println(NVIC->ISPR[i], HEX);
+            
+            // Identify specific interrupt sources
+            uint32_t pending = NVIC->ISPR[i];
+            for (int bit = 0; bit < 32; bit++) {
+                if (pending & (1 << bit)) {
+                    int irq_num = i * 32 + bit;
+                    rtt.print("    IRQ "); rtt.print(irq_num); rtt.print(" (bit "); rtt.print(bit); rtt.print("): ");
+                    
+                    // Map IRQ numbers to peripherals
+                    switch (irq_num) {
+                        case 38: rtt.println("UARTE0"); break;
+                        case 39: rtt.println("UARTE1"); break;
+                        case 40: rtt.println("UARTE2"); break;
+                        case 41: rtt.println("UARTE3"); break;
+                        case 42: rtt.println("SWI2 (BLE)"); break;
+                        case 43: rtt.println("SWI3 (BLE)"); break;
+                        case 44: rtt.println("SWI4 (BLE)"); break;
+                        case 45: rtt.println("SWI5 (BLE)"); break;
+                        case 6: rtt.println("GPIOTE"); break;
+                        case 7: rtt.println("SAADC"); break;
+                        case 8: rtt.println("TIMER0"); break;
+                        case 9: rtt.println("TIMER1"); break;
+                        case 10: rtt.println("TIMER2"); break;
+                        case 11: rtt.println("RTC0"); break;
+                        case 12: rtt.println("TEMP"); break;
+                        case 13: rtt.println("RNG"); break;
+                        case 14: rtt.println("ECB"); break;
+                        case 15: rtt.println("CCM_AAR"); break;
+                        case 16: rtt.println("WDT"); break;
+                        case 17: rtt.println("RTC1"); break;
+                        case 18: rtt.println("QDEC"); break;
+                        case 19: rtt.println("COMP_LPCOMP"); break;
+                        case 20: rtt.println("SWI0_EGU0"); break;
+                        case 21: rtt.println("SWI1_EGU1"); break;
+                        case 22: rtt.println("SWI2_EGU2"); break;
+                        case 23: rtt.println("SWI3_EGU3"); break;
+                        case 24: rtt.println("SWI4_EGU4"); break;
+                        case 25: rtt.println("SWI5_EGU5"); break;
+                        case 26: rtt.println("TIMER3"); break;
+                        case 27: rtt.println("TIMER4"); break;
+                        case 28: rtt.println("PWM0"); break;
+                        case 29: rtt.println("PDM"); break;
+                        case 30: rtt.println("MWU"); break;
+                        case 31: rtt.println("PWM1"); break;
+                        case 32: rtt.println("PWM2"); break;
+                        case 33: rtt.println("SPIM2_SPIS2_SPI2"); break;
+                        case 34: rtt.println("RTC2"); break;
+                        case 35: rtt.println("I2S"); break;
+                        case 36: rtt.println("FPU"); break;
+                        case 37: rtt.println("USBD"); break;
+                        default: rtt.println("Unknown peripheral"); break;
+                    }
+                }
+            }
+            hasPending = true;
+        }
+    }
+    if(hasPending){
+    
+    // Check UART interrupts with detailed event analysis
+    if (NRF_UARTE0->INTENSET != 0) {
+        rtt.print("UARTE0 interrupts enabled: 0x"); rtt.println(NRF_UARTE0->INTENSET, HEX);
+        
+        // Check specific UARTE0 events
+        rtt.println("UARTE0 Event Analysis:");
+        
+        // Check ENDRX (End of RX buffer transfer)
+        if (NRF_UARTE0->EVENTS_ENDRX) {
+            rtt.println("  - ENDRX event: PENDING");
+        }
+        
+        // Check ENDTX (End of TX buffer transfer)
+        if (NRF_UARTE0->EVENTS_ENDTX) {
+            rtt.println("  - ENDTX event: PENDING");
+        }
+        
+        // Check ERROR event
+        if (NRF_UARTE0->EVENTS_ERROR) {
+            rtt.println("  - ERROR event: PENDING");
+            rtt.print("    Error source: 0x"); rtt.println(NRF_UARTE0->ERRORSRC, HEX);
+        }
+        
+        // Check RXTO (RX timeout)
+        if (NRF_UARTE0->EVENTS_RXTO) {
+            rtt.println("  - RXTO event: PENDING");
+        }
+        
+        // Check RXSTARTED
+        if (NRF_UARTE0->EVENTS_RXSTARTED) {
+            rtt.println("  - RXSTARTED event: PENDING");
+        }
+        
+        // Check TXSTARTED
+        if (NRF_UARTE0->EVENTS_TXSTARTED) {
+            rtt.println("  - TXSTARTED event: PENDING");
+        }
+        
+        // Check TXSTOPPED
+        if (NRF_UARTE0->EVENTS_TXSTOPPED) {
+            rtt.println("  - TXSTOPPED event: PENDING");
+        }
+        
+        // Show enabled interrupts vs pending events
+        rtt.print("  Enabled interrupts: ");
+        if (NRF_UARTE0->INTENSET & UARTE_INTENSET_ENDRX_Msk) rtt.print("ENDRX ");
+        if (NRF_UARTE0->INTENSET & UARTE_INTENSET_ENDTX_Msk) rtt.print("ENDTX ");
+        if (NRF_UARTE0->INTENSET & UARTE_INTENSET_ERROR_Msk) rtt.print("ERROR ");
+        if (NRF_UARTE0->INTENSET & UARTE_INTENSET_RXTO_Msk) rtt.print("RXTO ");
+        if (NRF_UARTE0->INTENSET & UARTE_INTENSET_RXSTARTED_Msk) rtt.print("RXSTARTED ");
+        if (NRF_UARTE0->INTENSET & UARTE_INTENSET_TXSTARTED_Msk) rtt.print("TXSTARTED ");
+        if (NRF_UARTE0->INTENSET & UARTE_INTENSET_TXSTOPPED_Msk) rtt.print("TXSTOPPED ");
+        rtt.println();
+        
+        // Show pending events
+        rtt.print("  Pending events: ");
+        if (NRF_UARTE0->EVENTS_ENDRX) rtt.print("ENDRX ");
+        if (NRF_UARTE0->EVENTS_ENDTX) rtt.print("ENDTX ");
+        if (NRF_UARTE0->EVENTS_ERROR) rtt.print("ERROR ");
+        if (NRF_UARTE0->EVENTS_RXTO) rtt.print("RXTO ");
+        if (NRF_UARTE0->EVENTS_RXSTARTED) rtt.print("RXSTARTED ");
+        if (NRF_UARTE0->EVENTS_TXSTARTED) rtt.print("TXSTARTED ");
+        if (NRF_UARTE0->EVENTS_TXSTOPPED) rtt.print("TXSTOPPED ");
+        rtt.println();
+    }
+    
+    if (NRF_UARTE1->INTENSET != 0) {
+        rtt.print("UARTE1 interrupts enabled: 0x"); rtt.println(NRF_UARTE1->INTENSET, HEX);
+        
+        // Check specific UARTE1 events
+        rtt.println("UARTE1 Event Analysis:");
+        if (NRF_UARTE1->EVENTS_ENDRX) rtt.println("  - ENDRX event: PENDING");
+        if (NRF_UARTE1->EVENTS_ENDTX) rtt.println("  - ENDTX event: PENDING");
+        if (NRF_UARTE1->EVENTS_ERROR) rtt.println("  - ERROR event: PENDING");
+        if (NRF_UARTE1->EVENTS_RXTO) rtt.println("  - RXTO event: PENDING");
+        if (NRF_UARTE1->EVENTS_RXSTARTED) rtt.println("  - RXSTARTED event: PENDING");
+        if (NRF_UARTE1->EVENTS_TXSTARTED) rtt.println("  - TXSTARTED event: PENDING");
+        if (NRF_UARTE1->EVENTS_TXSTOPPED) rtt.println("  - TXSTOPPED event: PENDING");
+    }
+    
+    // Check I2C interrupts
+    if (NRF_TWIM0->INTENSET != 0) {
+        rtt.print("TWIM0 interrupts enabled: 0x"); rtt.println(NRF_TWIM0->INTENSET, HEX);
+    }
+    
+    // Check GPIO interrupts
+    if (NRF_GPIOTE->INTENSET != 0) {
+        rtt.print("GPIOTE interrupts enabled: 0x"); rtt.println(NRF_GPIOTE->INTENSET, HEX);
+        
+        // Show detailed GPIOTE analysis if there are pending interrupts
+        if (hasPending) {
+            rtt.println("GPIOTE Event Analysis:");
+            
+            // Check each GPIOTE channel (0-7)
+            for (int ch = 0; ch < 8; ch++) {
+                if (NRF_GPIOTE->EVENTS_IN[ch]) {
+                    rtt.print("  - Channel "); rtt.print(ch); rtt.println(" event: PENDING");
+                    
+                    // Show channel configuration
+                    uint32_t config = NRF_GPIOTE->CONFIG[ch];
+                    rtt.print("    Mode: ");
+                    if ((config & GPIOTE_CONFIG_MODE_Msk) == GPIOTE_CONFIG_MODE_Disabled) {
+                        rtt.print("Disabled");
+                    } else if ((config & GPIOTE_CONFIG_MODE_Msk) == GPIOTE_CONFIG_MODE_Event) {
+                        rtt.print("Event");
+                    } else if ((config & GPIOTE_CONFIG_MODE_Msk) == GPIOTE_CONFIG_MODE_Task) {
+                        rtt.print("Task");
+                    }
+                    
+                    rtt.print(", Pin: "); rtt.print((config & GPIOTE_CONFIG_PSEL_Msk) >> GPIOTE_CONFIG_PSEL_Pos);
+                    
+                    rtt.print(", Polarity: ");
+                    if ((config & GPIOTE_CONFIG_POLARITY_Msk) == GPIOTE_CONFIG_POLARITY_None) {
+                        rtt.print("None");
+                    } else if ((config & GPIOTE_CONFIG_POLARITY_Msk) == GPIOTE_CONFIG_POLARITY_LoToHi) {
+                        rtt.print("LoToHi");
+                    } else if ((config & GPIOTE_CONFIG_POLARITY_Msk) == GPIOTE_CONFIG_POLARITY_HiToLo) {
+                        rtt.print("HiToLo");
+                    } else if ((config & GPIOTE_CONFIG_POLARITY_Msk) == GPIOTE_CONFIG_POLARITY_Toggle) {
+                        rtt.print("Toggle");
+                    }
+                    
+                    rtt.print(", OutInit: ");
+                    if ((config & GPIOTE_CONFIG_OUTINIT_Msk) == GPIOTE_CONFIG_OUTINIT_Low) {
+                        rtt.print("Low");
+                    } else {
+                        rtt.print("High");
+                    }
+                    rtt.println();
+                }
+            }
+            
+            // Show enabled vs pending
+            rtt.print("  Enabled channels: ");
+            for (int ch = 0; ch < 8; ch++) {
+                if (NRF_GPIOTE->INTENSET & (1 << ch)) {
+                    rtt.print(ch); rtt.print(" ");
+                }
+            }
+            rtt.println();
+            
+            rtt.print("  Pending channels: ");
+            for (int ch = 0; ch < 8; ch++) {
+                if (NRF_GPIOTE->EVENTS_IN[ch]) {
+                    rtt.print(ch); rtt.print(" ");
+                }
+            }
+            rtt.println();
+        }
+    }
+    
+    // Check SoftDevice events
+    uint32_t evt_id;
+    if (sd_evt_get(&evt_id) == NRF_SUCCESS) {
+        rtt.print("SoftDevice event pending: 0x"); rtt.println(evt_id, HEX);
+    } else {
+        rtt.println("No SoftDevice events pending");
+    }
+    
+    // Check BLE events - using correct function signature
+    uint8_t ble_evt_buffer[sizeof(ble_evt_t)];
+    uint16_t ble_evt_len = sizeof(ble_evt_buffer);
+    if (sd_ble_evt_get(ble_evt_buffer, &ble_evt_len) == NRF_SUCCESS) {
+        rtt.print("BLE event pending, length: "); rtt.println(ble_evt_len);
+    } else {
+        rtt.println("No BLE events pending");
+    }
+    }
+    if (!hasPending) {
+        rtt.println("No NVIC pending interrupts");
+    }
+    rtt.println("=== End Interrupt Check ===");
+}
+
+void check1msInterruptSources() {
+    rtt.println("=== 1ms Interrupt Source Check ===");
+    
+    // Check SysTick (most likely culprit)
+    rtt.print("SysTick enabled: "); rtt.println((SCB->ICSR & SCB_ICSR_PENDSTSET_Msk) ? "Yes" : "No");
+    rtt.print("SysTick pending: "); rtt.println((SCB->ICSR & SCB_ICSR_PENDSTSET_Msk) ? "Yes" : "No");
+    
+    // Check RTC0 (commonly used for 1ms timing)
+    rtt.print("RTC0 enabled: "); rtt.println(NRF_RTC0->INTENSET ? "Yes" : "No");
+    rtt.print("RTC0 running: "); rtt.println(NRF_RTC0->TASKS_START ? "Yes" : "No");
+    rtt.print("RTC0 prescaler: "); rtt.println(NRF_RTC0->PRESCALER);
+    rtt.print("RTC0 compare[0]: "); rtt.println(NRF_RTC0->CC[0]);
+    
+    // Check RTC1 (used by SoftDevice)
+    rtt.print("RTC1 enabled: "); rtt.println(NRF_RTC1->INTENSET ? "Yes" : "No");
+    rtt.print("RTC1 running: "); rtt.println(NRF_RTC1->TASKS_START ? "Yes" : "No");
+    rtt.print("RTC1 prescaler: "); rtt.println(NRF_RTC1->PRESCALER);
+    
+    // Check TIMER0 (often used by Arduino)
+    rtt.print("TIMER0 enabled: "); rtt.println(NRF_TIMER0->INTENSET ? "Yes" : "No");
+    rtt.print("TIMER0 running: "); rtt.println(NRF_TIMER0->TASKS_START ? "Yes" : "No");
+    rtt.print("TIMER0 prescaler: "); rtt.println(NRF_TIMER0->PRESCALER);
+    
+    // Check TIMER1
+    rtt.print("TIMER1 enabled: "); rtt.println(NRF_TIMER1->INTENSET ? "Yes" : "No");
+    rtt.print("TIMER1 running: "); rtt.println(NRF_TIMER1->TASKS_START ? "Yes" : "No");
+    
+    // Check TIMER2
+    rtt.print("TIMER2 enabled: "); rtt.println(NRF_TIMER2->INTENSET ? "Yes" : "No");
+    rtt.print("TIMER2 running: "); rtt.println(NRF_TIMER2->TASKS_START ? "Yes" : "No");
+    
+    rtt.println("=== End 1ms Interrupt Check ===");
+}
+
+void scanI2C(){
+    rtt.println("=== I2C Scanner ===");
+    rtt.println("Scanning I2C bus for devices...");
+    int deviceCount = 0;
+    
+    // Scan only valid I2C addresses (0x08 to 0x77, excluding reserved addresses)
+    for (byte address = 8; address < 120; address++) {
+        // Try to communicate with device at this address
+        Wire.beginTransmission(address);
+        byte error = Wire.endTransmission();
+        
+        if (error == 0) {
+            // Device found
+            deviceCount++;
+            
+            // Identify common devices
+            switch (address) {
+                case 0x29: rtt.println("(VEML6035 Light)"); break;
+                case 0x43: rtt.println("(ENS210 Temp/Hum)"); break;
+                case 0x5D: rtt.println("(ENS210 Pres)"); break;
+                default: rtt.println("(Unknown)"); break;
+            }
+        }
+        // Small delay to prevent overwhelming the bus
+        delay(1);
+        // Yield to prevent watchdog issues
+        if (address % 32 == 0) {
+            yield();
+        }
+    }
+    rtt.print("I2C scan completed. Found "); rtt.print(deviceCount); rtt.println(" device(s).");
+    rtt.println("=== End I2C Scanner ===");
 }

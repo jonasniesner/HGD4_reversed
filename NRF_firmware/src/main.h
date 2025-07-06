@@ -3,23 +3,24 @@
 #include <SPI.h>
 #include <Adafruit_LIS3DH.h>
 #include <Adafruit_Sensor.h>
-#include <LPS22HBSensor.h>
+#include <Sodaq_LPS22HB.h>
 #include <TinyGsmClient.h>
 #include <RTTStream.h>
 #include <ArduinoHttpClient.h>
 #include <ArduinoJson.h>
 #include <bluefruit.h>
-#include "ens210.h"
 #include "SparkFun_VEML6030_Ambient_Light_Sensor.h"
 #include "sensors.h"
+#include "ens210.h"
 
 SparkFun_Ambient_Light light(AL_ADDR);
 
-ENS210 ens210;
-LPS22HBSensor lps22hb(&Wire);
+Sodaq_LPS22HB barometricSensor;
 
 Adafruit_LIS3DH acc1 = Adafruit_LIS3DH(ACCL1_CS);
 Adafruit_LIS3DH acc2 = Adafruit_LIS3DH(ACCL2_CS);
+
+ENS210 ens210;
 
 RTTStream rtt;
 
@@ -223,3 +224,7 @@ void triggerMotionTransmission();
 // Power management functions
 bool shouldKeepModemPowered();
 void logPowerManagementStatus();
+void checkAllInterruptFlags();
+void clearInterruptFlags();
+void check1msInterruptSources();
+void scanI2C();
