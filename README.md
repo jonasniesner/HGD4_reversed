@@ -1,9 +1,13 @@
 # HGD4_reversed
-Information about the LOCO Track Primary HGD4 GPS tracker
+Custom firmware and information for the LOCO Track Primary HGD4 GPS tracker
 
 ![pinout](https://github.com/jonasniesner/HGD4_reversed/blob/main/pinout.webp?raw=true)
 
-The following tables where reversed from the hardware version 1.1, we know of the following version 1.1 1.4 1.6 1.6a. The other versions still have to be reversed properly.
+To get startet, connect a jlink programmer to GND and SWDIO and SWCLK pins. Then connect a 5-6V power supply or battery to the battery port and press the power button.
+After that you can upload the NRF firmware part. The esp does not need custom firmware at the moment.
+You will most likely have to replace the sim card and adjust the config for it and the backend server you intend to use.
+
+The following tables where mainly reversed from the hardware version 1.1, we know of the following version 1.1 1.4 1.6 1.6a. All of those versions should be compatible
 
 
 | Component                      | Type                      |  Note                                        | Marking |
@@ -14,9 +18,10 @@ The following tables where reversed from the hardware version 1.1, we know of th
 | LIS3DH                         | Acceleration Sensor       | Two units present                            | U2           |
 | LIS3DH                         | Acceleration Sensor       | Two units present                            | U3           |
 | VEML6035                       | Light Sensor              | Next to push button, used for wake-up        | IC7          |
-| ENS210                         | Temperature + Humidity Sensor | -                                        | IC3          |
+| ENS210                         | Temperature + Humidity Sensor | only on hw version 1.1 and 1.4           | IC3          |
 | TPL5010                        | Watchdog                  | needs to be fed                              | IC4          |
-| LPS22HB                        | Pressure Sensor           | -                                            | IC5          |
+| LPS22HB                        | Pressure Sensor           | only on hw version 1.1 and 1.4               | IC5          |
+| ENS220                         | Pressure Sensor           | only on hw version 1.6 and 1.6a              | IC5          |
 | Red LED                        | LED                       | -                                            | LED1         |
 | Green LED                      | LED                       | -                                            | LED2         |
 | Button                         | Push Button               | Wakes the device power off                   | SW1          |
