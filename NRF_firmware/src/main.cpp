@@ -53,84 +53,53 @@ void ble_scan_callback(ble_gap_evt_adv_report_t* report){
     Bluefruit.Scanner.resume();
     return;
   }
-  
-  // Check if we've reached the maximum number of beacons
   if (bleBeaconsFound >= deviceConfig.ble_scan_max_beacons) {
     Bluefruit.Scanner.resume();
     return;
   }
-  
-  // Check if scan duration has expired
   if (millis() - bleScanStartTime > deviceConfig.ble_scan_duration) {
     Bluefruit.Scanner.resume();
     return;
   }
-  
   JsonObject beacon = bleBeacons.createNestedObject();
   if (beacon.isNull()) {
-    rtt.println("BLE: Failed to create beacon object");
+    rtt.println("Failed to create beacon object");
     Bluefruit.Scanner.resume();
     return;
   }
-  
-  // Add timestamp
-  beacon["ts"] = millis();
-  
-  // Add RSSI
-  beacon["rssi"] = report->rssi;
-  
-  // Add MAC address (little endian, so reverse for display)
+  beacon["r"] = report->rssi;
   char macStr[18];
-  sprintf(macStr, "%02X:%02X:%02X:%02X:%02X:%02X",
-          report->peer_addr.addr[5], report->peer_addr.addr[4], 
-          report->peer_addr.addr[3], report->peer_addr.addr[2], 
-          report->peer_addr.addr[1], report->peer_addr.addr[0]);
-  beacon["mac"] = String(macStr);
-  
-  // Add advertisement type
-  beacon["ty"] = report->type.scan_response ? "sr" : "adv";
-  beacon["con"] = report->type.connectable;
-  beacon["dir"] = report->type.directed;
-  
-  // Add payload length
-  beacon["plen"] = report->data.len;
-  
-  // Parse device name if available
+  sprintf(macStr, "%02X%02X%02X%02X%02X%02X", report->peer_addr.addr[5], report->peer_addr.addr[4], report->peer_addr.addr[3], report->peer_addr.addr[2], report->peer_addr.addr[1], report->peer_addr.addr[0]);
+  beacon["m"] = String(macStr);
+  beacon["t"] = report->type.scan_response ? "s" : "a";
+  beacon["c"] = report->type.connectable;
+  beacon["d"] = report->type.directed;
+  beacon["l"] = report->data.len;
   uint8_t buffer[32];
   memset(buffer, 0, sizeof(buffer));
-  
-  // Try to get complete local name first
   if(Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_COMPLETE_LOCAL_NAME, buffer, sizeof(buffer))) {
-    beacon["name"] = String((char*)buffer);
+    beacon["n"] = String((char*)buffer);
   } else if(Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_SHORT_LOCAL_NAME, buffer, sizeof(buffer))) {
-    beacon["name"] = String((char*)buffer);
+    beacon["n"] = String((char*)buffer);
   }
-  
-  // Parse TX power if available
   memset(buffer, 0, sizeof(buffer));
   if (Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_TX_POWER_LEVEL, buffer, sizeof(buffer))) {
-    beacon["tx_power"] = (int8_t)buffer[0];
+    beacon["p"] = (int8_t)buffer[0];
   }
-  
-  // Parse UUIDs if available
   uint8_t uuidBuffer[32];
-  
-  // 16-bit UUIDs
   int uuidLen = Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_16BIT_SERVICE_UUID_COMPLETE, uuidBuffer, sizeof(uuidBuffer));
   if (uuidLen > 0) {
-    JsonArray uuids = beacon.createNestedArray("uuids_16");
+    JsonArray uuids = beacon.createNestedArray("u6");
     for(int i = 0; i < uuidLen; i += 2) {
       uint16_t uuid16;
       memcpy(&uuid16, uuidBuffer + i, 2);
       uuids.add(String(uuid16, HEX));
     }
   }
-  
-  // 128-bit UUIDs
   memset(uuidBuffer, 0, sizeof(uuidBuffer));
   uuidLen = Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_128BIT_SERVICE_UUID_COMPLETE, uuidBuffer, sizeof(uuidBuffer));
   if (uuidLen > 0) {
-    JsonArray uuids = beacon.createNestedArray("uuids_128");
+    JsonArray uuids = beacon.createNestedArray("u8");
     for(int i = 0; i < uuidLen; i += 16) {
       String uuid128 = "";
       for(int j = 0; j < 16 && (i + j) < uuidLen; j++) {
@@ -140,18 +109,14 @@ void ble_scan_callback(ble_gap_evt_adv_report_t* report){
       uuids.add(uuid128);
     }
   }
-  
-  // Service Data
   memset(uuidBuffer, 0, sizeof(uuidBuffer));
   uuidLen = Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_SERVICE_DATA, uuidBuffer, sizeof(uuidBuffer));
   if (uuidLen > 0) {
-    JsonArray serviceData = beacon.createNestedArray("service_data");
+    JsonArray serviceData = beacon.createNestedArray("sd");
     for(int i = 0; i < uuidLen; i++) {
       serviceData.add(uuidBuffer[i]);
     }
   }
-  
-  // Parse manufacturer data if available
   int manuLen = Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_MANUFACTURER_SPECIFIC_DATA, buffer, sizeof(buffer));
   if (manuLen > 0) {
     JsonArray manuData = beacon.createNestedArray("md");
@@ -159,43 +124,26 @@ void ble_scan_callback(ble_gap_evt_adv_report_t* report){
       manuData.add(buffer[i]);
     }
   }
-  
-  // Parse flags if available
   memset(buffer, 0, sizeof(buffer));
   if (Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_FLAGS, buffer, sizeof(buffer))) {
-    beacon["flags"] = buffer[0];
+    beacon["f"] = buffer[0];
   }
-  
-  // Parse appearance if available
   memset(buffer, 0, sizeof(buffer));
   if (Bluefruit.Scanner.parseReportByType(report, BLE_GAP_AD_TYPE_APPEARANCE, buffer, sizeof(buffer))) {
     uint16_t appearance;
     memcpy(&appearance, buffer, 2);
-    beacon["appearance"] = appearance;
+    beacon["a"] = appearance;
   }
-  
   bleBeaconsFound++;
-  //rtt.print("BLE: Beacon "); rtt.print(bleBeaconsFound); rtt.print("/"); rtt.println(deviceConfig.ble_scan_max_beacons);
-  
-  // For Softdevice v6: after received a report, scanner will be paused
-  // We need to call Scanner resume() to continue scanning
   Bluefruit.Scanner.resume();
 }
 
-// BLE initialization function - called once in setup
 bool initializeBLE() {
   rtt.println("Initializing BLE...");
-  
-  // Initialize BLE scanning
   Bluefruit.begin(0, 1);
   Bluefruit.setTxPower(4);
-
-  // Set the device name
-  Bluefruit.setName("Bluefruit52");
-
-  // Set the LED interval for blinky pattern on BLUE LED
+  Bluefruit.setName("HGD4");
   Bluefruit.setConnLedInterval(250);
-  
   rtt.println("BLE initialization completed");
   return true;
 }
@@ -205,68 +153,44 @@ void scanforbeacons(){
     rtt.println("BLE scanning disabled in configuration");
     return;
   }
-
   rtt.println("Starting BLE beacon scan");
   rtt.print("Max beacons: "); rtt.println(deviceConfig.ble_scan_max_beacons);
   rtt.print("Scan duration: "); rtt.print(deviceConfig.ble_scan_duration); rtt.println(" ms");
-
-  // Initialize JSON document for BLE scan data
   bleScanDoc.clear();
   bleBeacons = bleScanDoc.createNestedArray("beacons");
   if (bleBeacons.isNull()) {
-    rtt.println("BLE: Failed to create beacons array");
+    rtt.println("Failed to create beacons array");
     return;
   }
-
-  // Initialize scanning variables
   bleScanning = true;
   bleScanStartTime = millis();
   bleBeaconsFound = 0;
-
-  // Start Central Scanning
   Bluefruit.Scanner.setRxCallback(ble_scan_callback);
   Bluefruit.Scanner.restartOnDisconnect(true);
   Bluefruit.Scanner.filterRssi(-80);
   Bluefruit.Scanner.setInterval(160, 80);       // in units of 0.625 ms
   Bluefruit.Scanner.useActiveScan(true);        // Request scan response data
   Bluefruit.Scanner.start(0);                   // 0 = Don't stop scanning after n seconds
-
-  rtt.println("BLE: Scanning started...");
-
-  // Wait for scan to complete (either max beacons found or timeout)
+  rtt.println("Scanning started...");
   unsigned long scanStartTime = millis();
   while (bleScanning && 
          bleBeaconsFound < deviceConfig.ble_scan_max_beacons && 
          (millis() - scanStartTime) < deviceConfig.ble_scan_duration) {
     delay(10);
-    
-    // Check if scan duration has expired
     if (millis() - bleScanStartTime > deviceConfig.ble_scan_duration) {
-      rtt.println("BLE: Scan duration expired");
+      rtt.println("Scan duration expired");
       break;
     }
   }
-
-  // Stop scanning
   Bluefruit.Scanner.stop();
-  
   bleScanning = false;
-
-  // Add summary information to JSON
-  bleScanDoc["count"] = bleBeaconsFound;
-  bleScanDoc["scan_duration"] = millis() - bleScanStartTime;
-  bleScanDoc["max_beacons"] = deviceConfig.ble_scan_max_beacons;
-  bleScanDoc["ts"] = millis();
-
-  // Serialize to string
+  bleScanDoc["sb"] = millis() - bleScanStartTime;
+  bleScanDoc["mb"] = deviceConfig.ble_scan_max_beacons;
   String bleScanJson;
   serializeJson(bleScanDoc, bleScanJson);
-
-  // Save to sensor data
   sensorData.ble_scan_data = bleScanJson;
-
-  rtt.print("BLE: Scan completed. Found "); rtt.print(bleBeaconsFound); rtt.println(" beacons");
-  rtt.print("BLE: JSON length: "); rtt.println(bleScanJson.length());
+  rtt.print("Scan completed. Found "); rtt.print(bleBeaconsFound); rtt.println(" beacons");
+  rtt.print("JSON length: "); rtt.println(bleScanJson.length());
 }
 
 void blinkLED(int times, int delayon, int delayoff, bool green){
@@ -290,7 +214,7 @@ void displaySensorDataSummary() {
   rtt.print("B="); rtt.print(sensorData.battery_voltage, 2);
   rtt.print("V, L="); rtt.print(sensorData.lux);
   rtt.print("lux, T="); rtt.print(sensorData.case_temperature, 1);
-  rtt.print("°C, H="); rtt.print(sensorData.case_humidity, 1);
+  rtt.print("C, H="); rtt.print(sensorData.case_humidity, 1);
   rtt.print("%RH, P="); rtt.print(sensorData.pressure, 1);
   rtt.print("hPa, GPS="); rtt.print(sensorData.gps_used_satellites);
   rtt.println(" sats");
@@ -319,11 +243,9 @@ void sensorpwr(bool onoff){
 }
 
 void wd_handler() {
-  //digitalWrite(GREEN_LED,LOW);
   digitalWrite(DONE,HIGH);
   delayMicroseconds(160);
   digitalWrite(DONE,LOW);
-  //digitalWrite(GREEN_LED,HIGH);
   wdcounter++;
 }
 
@@ -332,11 +254,13 @@ void collectAllSensorData(){
   sensorData.wakeup_reason = NRF_POWER->RESETREAS;
   sensorData.watchdog_counter = wdcounter;
   sensorData.battery_voltage = readBatteryVoltage();
-  sensorData.lux = readLightSensor(0.5, 200);
+  if(has_veml60350)sensorData.lux = readLightSensor(0.5, 200);
+  if(has_ens210){
   float temp, hum;
   if (readTemperatureHumidity(temp, hum)) {
     sensorData.case_temperature = temp;
     sensorData.case_humidity = hum;
+  }
   }
   float pressure, pressureTemp;
   if (readPressure(pressure, pressureTemp)) {
@@ -361,8 +285,7 @@ void powerdownmodem(){
   }
   SerialAT.flush();
   SerialAT.end();
-  rtt.println("Powering down modem");
-  rtt.println("Pressing modem power button");
+  rtt.println("Powering down modem...");
   digitalWrite(MODEM_PWRKEY,HIGH);
   delay(600);
   digitalWrite(MODEM_PWRKEY,LOW);
@@ -394,24 +317,18 @@ void softpwrup(){
 }
 
 void gpioinit(){
-  //latch on the main power
   pinMode(PWR_LATCH , OUTPUT);
   digitalWrite(PWR_LATCH , LOW);
-  //setup watchdog feeding
   pinMode(WAKE, INPUT);
   pinMode(DONE, OUTPUT);
   attachInterrupt(digitalPinToInterrupt(WAKE), wd_handler, RISING);
-  //setup I2C bus
   Wire.begin();
-  //power up sensors
   pinMode(SENSOR_PWR, OUTPUT);
   digitalWrite(SENSOR_PWR, HIGH);
-  //set up leds
   pinMode(RED_LED,OUTPUT);
   pinMode(GREEN_LED,OUTPUT);
   digitalWrite(RED_LED,HIGH);
   digitalWrite(GREEN_LED,HIGH);
-  //set all other pins
   pinMode(MODEM_ESP_PWR,OUTPUT);
   digitalWrite(MODEM_ESP_PWR,LOW);
   pinMode(ESP_PWR,OUTPUT);
@@ -526,48 +443,41 @@ bool readTemperatureHumidity(float& temperature, float& humidity) {
 }
 
 bool readPressure(float& pressure, float& sensorTemp) {
+  if(has_lpS22hb){
   barometricSensor.init();
   pressure = barometricSensor.readPressureHPA();
   sensorTemp = barometricSensor.readTemperature();
   return (pressure != 0.0 || sensorTemp != 0.0);
+  }
+  if(has_ens220){
+    ens220.begin(&Wire, 0x20);
+    ens220.singleShotMeasure(ENS220_SENSOR_TEMPERATURE_AND_PRESSURE);
+    ens220.waitSingleShot();
+    ens220.update();
+    pressure = ens220.getPressureHectoPascal();
+    sensorTemp = ens220.getTempCelsius();
+    return (pressure != 0.0 || sensorTemp != 0.0);
+  }
+  return false;
 }
 
 bool readAccelerometers(float& acc1_x, float& acc1_y, float& acc1_z, float& acc2_x, float& acc2_y, float& acc2_z) {
   if (!acc1.begin() || !acc2.begin()) {
     return false;
   }
-  
-  // Set range for both accelerometers
   acc1.setRange(LIS3DH_RANGE_2_G);
   acc2.setRange(LIS3DH_RANGE_2_G);
-  
-  // Read data from both accelerometers
   acc1.read();
   acc2.read();
-  
-  // Extract values
   acc1_x = acc1.x;
   acc1_y = acc1.y;
   acc1_z = acc1.z;
   acc2_x = acc2.x;
   acc2_y = acc2.y;
   acc2_z = acc2.z;
-  
-  // Power optimization: Put accelerometers in low power mode
-  acc1.enableDRDY(false);  // Disable data ready interrupt
-  acc2.enableDRDY(false);  // Disable data ready interrupt
-  
-  // Power optimization: Disable SPI after use to reduce power consumption
-  // This prevents SPI from staying active and consuming power
+  acc1.enableDRDY(false);
+  acc2.enableDRDY(false); 
   SPI.end();
-  
-  // Power optimization: Set SPI pins to input to reduce leakage current
-  //pinMode(SPI_CLK, INPUT);
-  //pinMode(SPI_MISO, INPUT);
-  //pinMode(SPI_MOSI, INPUT);
-  //pinMode(ACCL1_CS, INPUT);
-  //pinMode(ACCL2_CS, INPUT);
-  
   return true;
 }
 
@@ -584,14 +494,14 @@ bool readGPS(float& latitude, float& longitude, float& speed, float& altitude, i
       modem.disableGPS();
       return false;
     }
-    rtt.printf("Requesting current GPS/GNSS/GLONASS location");
+    rtt.println("Requesting current GPS/GNSS/GLONASS location");
     if (modem.getGPS(&latitude, &longitude, &speed, &altitude,
                      &visibleSatellites, &usedSatellites, &accuracy, 
                      &gps_year, &gps_month, &gps_day, &gps_hour, &gps_minute, &gps_second)) {
       modem.disableGPS();
       return true;
     } else {
-      rtt.println("Couldn't get GPS/GNSS/GLONASS location, retrying in 2s.");
+      rtt.println("Couldn't get GPS/GNSS/GLONASS location");
       delay(2000);
     }
   }
@@ -626,8 +536,6 @@ bool connectToNetwork() {
   }
   rtt.println("Network connection test successful");
   rtt.println("Modem ready for data transmission");
-  
-  // Test network information
   rtt.println("Testing network information...");
   readNetworkInfo();
   return true;
@@ -643,75 +551,57 @@ bool disconnectFromNetwork() {
   return true;
 }
 
-// Helper function to validate modem connection before large transfers
 bool validateModemConnection() {
   if (!modemInitialized) {
     return false;
   }
-  
-  // Check if modem is still responsive
   if (!modem.isNetworkConnected()) {
     rtt.println("Network connection lost, reconnecting...");
     if (!connectToNetwork()) {
       return false;
     }
   }
-  
-  // Check signal quality
-  int signalQuality = modem.getSignalQuality();
-  if (signalQuality == 99) {
-    rtt.println("Poor signal quality, may affect large transfers");
-  }
-  
   return true;
 }
 
 bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) {
   rtt.println("Starting HTTP transmission...");
-  
   if (!modemInitialized) {
     rtt.println("Modem not initialized");
     return false;
   }
-  
-  // Validate modem connection
   if (!validateModemConnection()) {
     rtt.println("Modem connection validation failed");
     return false;
   }
-  
   if (!modem.isGprsConnected()) {
     rtt.println("Not connected to network");
     return false;
   }
-
-  // Try up to 3 times
   for (int attempt = 1; attempt <= 3; attempt++) {
     rtt.print("HTTP attempt "); rtt.print(attempt); rtt.println("/3");
-    
     TinyGsmClient client(modem);
     HttpClient http(client, config.server, config.port);
-    
-    // Set longer timeout for large requests
-    http.setTimeout(60000); // 60 second timeout
-    
-    // Create JSON document with larger size for complex data
-    DynamicJsonDocument doc(32000); // Increased size for large payloads
-    
-    // Build JSON object efficiently
+    http.setTimeout(60000);
+    DynamicJsonDocument doc(32000);
     doc["ts"] = data.timestamp;
-    doc["lx"] = data.lux;
+    if(has_veml60350)doc["lx"] = data.lux;
     doc["bat"] = data.battery_voltage;
+    if(has_ens210){
     doc["tmp"] = data.case_temperature;
     doc["hum"] = data.case_humidity;
+    }
+    if(has_ens220 || has_lpS22hb){
     doc["prs"] = data.pressure;
     doc["pt"] = data.pressure_sensor_temp;
+    }
     doc["a1x"] = data.acc1_x;
     doc["a1y"] = data.acc1_y;
     doc["a1z"] = data.acc1_z;
     doc["a2x"] = data.acc2_x;
     doc["a2y"] = data.acc2_y;
     doc["a2z"] = data.acc2_z;
+    if(data.gps_visible_satellites > 1){
     doc["glt"] = data.gps_latitude;
     doc["gln"] = data.gps_longitude;
     doc["gsp"] = data.gps_speed;
@@ -719,77 +609,51 @@ bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) 
     doc["gsv"] = data.gps_visible_satellites;
     doc["gsu"] = data.gps_used_satellites;
     doc["gac"] = data.gps_accuracy;
+    }
     doc["wkr"] = data.wakeup_reason;
     doc["wdc"] = data.watchdog_counter;
-    doc["mid"] = data.modem_id.length() > 0 ? data.modem_id : "unknown";
+    doc["mid"] = data.modem_id;
     doc["mt"] = data.modem_temperature;
-    doc["sid"] = data.sim_card_id.length() > 0 ? data.sim_card_id : "unknown";
-    doc["nn"] = data.network_name.length() > 0 ? data.network_name : "unknown";
-    doc["nid"] = data.network_id.length() > 0 ? data.network_id : "unknown";
-    doc["lt"] = data.link_type.length() > 0 ? data.link_type : "unknown";
+    doc["sid"] = data.sim_card_id;
+    doc["nn"] = data.network_name;
+    doc["nid"] = data.network_id;
+    doc["lt"] = data.link_type;
     doc["sq"] = data.signal_quality;
     doc["ss"] = data.signal_strength;
     doc["nrs"] = data.network_registration_status;
-    doc["nb"] = data.network_band.length() > 0 ? data.network_band : "unknown";
+    doc["nb"] = data.network_band;
     doc["nc"] = data.network_channel;
-    doc["noc"] = data.network_operator_code.length() > 0 ? data.network_operator_code : "unknown";
-    
-    // Add WiFi scan data if available
+    doc["noc"] = data.network_operator_code;
     if (data.wifi_scan_data.length() > 0) {
-      doc["wifi"] = data.wifi_scan_data;
+      DynamicJsonDocument wifiDoc(16000);
+      DeserializationError wifiError = deserializeJson(wifiDoc, data.wifi_scan_data);
+      if (!wifiError) {
+        doc["wifi"] = wifiDoc;
+      } else {
+        rtt.println("Failed to parse WiFi scan data JSON");
+        doc["wifi"] = data.wifi_scan_data; // Fallback to string if parsing fails
+      }
     }
-    
-    // Add BLE scan data if available
     if (data.ble_scan_data.length() > 0) {
-      doc["ble"] = data.ble_scan_data;
+      DynamicJsonDocument bleDoc(16000);
+      DeserializationError bleError = deserializeJson(bleDoc, data.ble_scan_data);
+      if (!bleError) {
+        doc["ble"] = bleDoc;
+      } else {
+        rtt.println("Failed to parse BLE scan data JSON");
+        doc["ble"] = data.ble_scan_data; // Fallback to string if parsing fails
+      }
     }
-    
-    // Calculate JSON size first to check if it fits
     size_t jsonSize = measureJson(doc);
     rtt.print("JSON size: "); rtt.print(jsonSize); rtt.println(" bytes");
-    
-    // Optimize scan data if JSON is too large
-    optimizeScanData(doc, 30000); // 30KB limit
-    
-    // Recalculate size after optimization
-    jsonSize = measureJson(doc);
-    rtt.print("Final JSON size: "); rtt.print(jsonSize); rtt.println(" bytes");
-    
-    if (jsonSize > 30000) { // Safety check
-      rtt.println("JSON too large, truncating scan data");
-      // Remove large scan data if JSON is too big
-      if (doc.containsKey("wifi")) doc.remove("wifi");
-      if (doc.containsKey("ble")) doc.remove("ble");
-      jsonSize = measureJson(doc);
-      rtt.print("Truncated JSON size: "); rtt.print(jsonSize); rtt.println(" bytes");
-    }
-    
-    // Serialize JSON to string with error checking
     String jsonData;
     jsonData.reserve(jsonSize + 100); // Reserve memory to avoid fragmentation
-    
     if (serializeJson(doc, jsonData) == 0) {
       rtt.println("JSON serialization failed");
       http.stop();
       return false;
     }
-    
-    // Validate JSON format
-    if (jsonData.length() == 0) {
-      rtt.println("Error: Empty JSON data");
-      http.stop();
-      return false;
-    }
-    
-    if (!jsonData.startsWith("{") || !jsonData.endsWith("}")) {
-      rtt.println("Error: Invalid JSON format");
-      http.stop();
-      return false;
-    }
-    
     rtt.print("Final JSON length: "); rtt.println(jsonData.length());
-    
-    // Send request using the optimized function for large payloads
     if (!sendLargeJsonData(http, doc, config.endpoint)) {
       rtt.println("Failed to send JSON data");
       http.stop();
@@ -799,12 +663,9 @@ bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) 
       }
       return false;
     }
-    
-    // Wait for response with proper timeout handling
     unsigned long startTime = millis();
     int statusCode = -1;
     bool responseReceived = false;
-    
     while (millis() - startTime < 45000) { // 45 second timeout
       if (http.available()) {
         statusCode = http.responseStatusCode();
@@ -813,7 +674,6 @@ bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) 
       }
       delay(50); // Shorter delay for faster response
     }
-    
     if (!responseReceived) {
       rtt.println("HTTP request timeout");
       http.stop();
@@ -823,27 +683,14 @@ bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) 
       }
       return false;
     }
-    
-    // Read complete HTTP response with proper handling of chunked transfer
     String responseBody = readCompleteHttpResponse(http, 30000);
-    
     rtt.print("Response length: "); rtt.println(responseBody.length());
-    // Only print first 200 characters to avoid flooding the log
-    if (responseBody.length() > 200) {
-      rtt.print("Response (first 200 chars): "); rtt.println(responseBody.substring(0, 200));
-    } else {
-      rtt.print("Response: "); rtt.println(responseBody);
-    }
-    
     http.stop();
-    
     if (statusCode >= 200 && statusCode < 300) {
       lastTransmissionTime = millis();
       rtt.print("HTTP success: "); rtt.println(statusCode);
-      
-      // Parse server response if it contains JSON
       if (responseBody.indexOf('{') != -1) {
-        DynamicJsonDocument responseDoc(12288); // 12KB for response parsing (increased from 2KB)
+        DynamicJsonDocument responseDoc(16000);
         if (parseServerResponse(responseBody, responseDoc)) {
           // Extract useful information from server response
           if (responseDoc.containsKey("status")) {
@@ -876,7 +723,6 @@ bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) 
       } else {
         rtt.println("No JSON data found in server response");
       }
-      
       return true;
     } else {
       rtt.print("HTTP error: "); rtt.println(statusCode);
@@ -887,13 +733,11 @@ bool sendSensorDataToServer(const SensorData& data, const ServerConfig& config) 
       }
     }
   }
-  
   rtt.println("All HTTP attempts failed");
   return false;
 }
 
 bool sendSensorDataToServer(const SensorData& data) {
-  // Create ServerConfig from loaded device configuration
   ServerConfig config = {
     deviceConfig.server_url.c_str(),
     deviceConfig.server_endpoint.c_str(),
@@ -906,7 +750,6 @@ bool sendSensorDataToServer(const SensorData& data) {
 }
 
 void manageModemLifecycle() {
-  unsigned long currentTime = millis();
     rtt.println("Transmitting sensor data...");
     if (!initializeModemIfNeeded()) {
       rtt.println("Failed to initialize modem");
@@ -936,8 +779,6 @@ void manageModemLifecycle() {
         sensorData.gps_used_satellites = usedSatellites;
         sensorData.gps_accuracy = accuracy;
         rtt.println("GPS data acquired");
-      } else {
-        rtt.println("GPS acquisition failed");
       }
       if (millis() - gpsStartTime > deviceConfig.gps_timeout) {
         rtt.println("GPS timeout, proceeding without GPS");
@@ -950,18 +791,12 @@ void manageModemLifecycle() {
       rtt.println("Data transmission failed");
       blinkLED(4, 200, 400, false);
     }
-    
-    // Shutdown modem between loops if configured
-    if (deviceConfig.modem_shutdown_between_loops) {
-      // Check if we should keep modem on due to motion
       if (shouldKeepModemPowered()) {
         rtt.println("Keeping modem powered on due to motion or configuration");
-        logPowerManagementStatus();
       } else {
         rtt.println("Shutting down modem between loops...");
         shutdownModem();
       }
-    }
 }
 
 bool readModemInfo() {
@@ -984,7 +819,6 @@ bool readNetworkInfo() {
   if (sensorData.signal_quality == 99) {
     sensorData.signal_strength = -999; 
   } else if (sensorData.signal_quality >= 0 && sensorData.signal_quality <= 31) {
-    // Convert to dBm: 0 = -113 dBm, 31 = -51 dBm
     sensorData.signal_strength = -113 + (sensorData.signal_quality * 2);
   } else {
     sensorData.signal_strength = -999; // Invalid value
@@ -996,30 +830,23 @@ bool readNetworkInfo() {
   if (response.indexOf("+QNWINFO:") != -1) {
     int start = response.indexOf("+QNWINFO:") + 9;
     String data = response.substring(start);
-    // Parse the comma-separated values
     int pos1 = data.indexOf(",");
     int pos2 = data.indexOf(",", pos1 + 1);
     int pos3 = data.indexOf(",", pos2 + 1);
     if (pos1 > 0 && pos2 > pos1 && pos3 > pos2) {
-      // Extract access technology (remove quotes)
       String act = data.substring(0, pos1);
       act.replace("\"", "");
-      // Extract operator code (remove quotes)
       String oper = data.substring(pos1 + 1, pos2);
       oper.replace("\"", "");
-      // Extract band (remove quotes)
       String band = data.substring(pos2 + 1, pos3);
       band.replace("\"", "");
-      // Extract channel
       String channel = data.substring(pos3 + 1);
       channel.replace("\"", "");
       channel.replace("\r", "");
       channel.replace("\n", "");
-      // Set the values
       sensorData.network_operator_code = oper;
       sensorData.network_band = band;
       sensorData.network_channel = channel.toInt();
-      // Map access technology to readable format
       if (act == " eMTC" || act == "LTE") {
         sensorData.link_type = "LTE";
       } else if (act == "GSM" || act == "GPRS" || act == "EDGE") {
@@ -1038,11 +865,8 @@ bool readNetworkInfo() {
   if (sensorData.link_type == "Unknown") {
     modem.sendAT(GF("+CREG?"));
     response = modem.stream.readString();
-    // Try to infer from registration status and signal quality
     if (sensorData.network_registration_status == 1 || sensorData.network_registration_status == 5) {
-      // Registered, home network or roaming
       if (sensorData.signal_quality > 0 && sensorData.signal_quality <= 31) {
-        // Good signal quality suggests LTE or 3G
         if (sensorData.signal_quality >= 20) {
           sensorData.link_type = "E-UTRAN (LTE)";
         } else if (sensorData.signal_quality >= 15) {
@@ -1053,7 +877,6 @@ bool readNetworkInfo() {
       }
     }
   }
-  // Method 3: Try +QCSQ (signal quality command that might give more info)
   if (sensorData.link_type == "Unknown") {
     modem.sendAT(GF("+QCSQ"));
     response = modem.stream.readString();
@@ -1078,28 +901,16 @@ bool modemFileOpen(const String& filename, int mode) {
     modemFileClose();
     delay(100); // Wait for close to complete
   }
-  
-  // Flush buffer before command
   while (modem.stream.available()) { modem.stream.read(); }
-
-  // rtt.print("Opening file: "); rtt.print(filename); rtt.print(" mode: "); rtt.println(mode);
   modem.sendAT(GF("+QFOPEN="), filename, GF(","), mode);
-  
   String response = modem.stream.readString();
-  // rtt.println("Open response: " + response);
-  
   if (response.indexOf("+QFOPEN:") != -1) {
-    // Correctly parse file handle from response: +QFOPEN: <fhandle>
     int handle_start = response.indexOf(":") + 1;
     String handle_str = response.substring(handle_start);
     handle_str.trim();
     currentFileHandle = handle_str.toInt();
-    
-    // rtt.print("Parsed file handle: "); rtt.println(currentFileHandle);
-    
     if (currentFileHandle >= 0) { // Note: 0 is a valid file handle
         fileOpen = true;
-        // rtt.println("File opened successfully, handle: " + String(currentFileHandle));
         return true;
     } else {
         rtt.println("Failed to parse valid file handle.");
@@ -1119,32 +930,16 @@ bool modemFileWrite(const String& data) {
     rtt.println("No file open for writing");
     return false;
   }
-  
-  // Flush buffer before command
   while (modem.stream.available()) { modem.stream.read(); }
-  
-  // rtt.print("Writing "); rtt.print(data.length()); rtt.print(" bytes to file handle: "); rtt.println(currentFileHandle);
   modem.sendAT(GF("+QFWRITE="), currentFileHandle, GF(","), data.length());
-  
-  // Add delay before reading response
   delay(100);
-  
   String response = modem.stream.readString();
-  // rtt.println("Write command response: " + response);
-  
   if (response.indexOf("CONNECT") != -1) {
-    // Send the actual data
     delay(50); // Longer delay to ensure modem is ready
     modem.stream.print(data);
-    
-    // Add delay before reading response
     delay(100);
-    
     response = modem.stream.readString();
-    // rtt.println("Write data response: " + response);
-    
     if (response.indexOf("OK") != -1) {
-      // rtt.println("Data written successfully");
       return true;
     } else if (response.indexOf("ERROR") != -1) {
       rtt.println("Write failed - ERROR response");
@@ -1167,26 +962,15 @@ bool modemFilePosition(int& position) {
     rtt.println("No file open for position query");
     return false;
   }
-  
-  // Flush buffer before command
   while (modem.stream.available()) { modem.stream.read(); }
-  
-  // rtt.print("Querying current file position for handle: "); rtt.println(currentFileHandle);
   modem.sendAT(GF("+QFPOSITION="), currentFileHandle);
-  
-  // Add delay before reading response
   delay(100);
-  
   String response = modem.stream.readString();
-  // rtt.println("Position response: " + response);
-  
   if (response.indexOf("+QFPOSITION:") != -1) {
-    // Parse position from response: +QFPOSITION: <position>
     int pos_start = response.indexOf(":") + 1;
     String pos_str = response.substring(pos_start);
     pos_str.trim();
     position = pos_str.toInt();
-    // rtt.print("Current file position: "); rtt.println(position);
     return true;
   } else if (response.indexOf("ERROR") != -1) {
     rtt.println("Position query failed - ERROR response");
@@ -1202,21 +986,11 @@ bool modemFileSeek(int offset, int origin) {
     rtt.println("No file open for seeking");
     return false;
   }
-  
-  // Flush buffer before command
   while (modem.stream.available()) { modem.stream.read(); }
-  
-  // rtt.print("Seeking to offset: "); rtt.print(offset); rtt.print(" origin: "); rtt.print(origin); rtt.print(" in file handle: "); rtt.println(currentFileHandle);
   modem.sendAT(GF("+QFSEEK="), currentFileHandle, GF(","), offset, GF(","), origin);
-  
-  // Add delay before reading response
   delay(100);
-  
   String response = modem.stream.readString();
-  // rtt.println("Seek response: " + response);
-  
   if (response.indexOf("OK") != -1) {
-    // rtt.println("File seek successful");
     return true;
   } else if (response.indexOf("ERROR") != -1) {
     rtt.println("Seek failed - ERROR response");
@@ -1240,12 +1014,6 @@ bool modemFileRead(String& data, int length) {
     return false;
   }
   while (modem.stream.available()) { modem.stream.read(); }
-  //int lastwd = wdcounter;
-  //while(lastwd == wdcounter){
-  //  nrf_delay_us(200);
-  //}
-  //delay(20);
-  // rtt.print("Reading "); rtt.print(length); rtt.println(" bytes");
   modem.sendAT(GF("+QFREAD="), currentFileHandle, GF(","), length);
   String response = "";
   unsigned long startTime = millis();
@@ -1288,7 +1056,6 @@ bool modemFileRead(String& data, int length) {
     }
     int dataStart = response.indexOf("CONNECT") + 7; // Skip "CONNECT "
     if (dataStart > 7) {
-      // Find the end of the length number and the start of the actual data
       int lengthEnd = response.indexOf("\r", dataStart);
       if (lengthEnd == -1) lengthEnd = response.indexOf("\n", dataStart);
       if (lengthEnd == -1) lengthEnd = response.length();
@@ -1300,9 +1067,7 @@ bool modemFileRead(String& data, int length) {
               response.charAt(actualDataStart) == '\t')) {
         actualDataStart++;
       }
-      // Find the end of the data (before the OK response)
       unsigned int dataEnd = response.indexOf("OK", actualDataStart);
-        // Make sure we don't include any whitespace before OK
         while (dataEnd > actualDataStart && 
                (response.charAt(dataEnd - 1) == '\r' || 
                 response.charAt(dataEnd - 1) == '\n' || 
@@ -1398,38 +1163,31 @@ bool modemFileExists(const String& filename) {
   return false;
 }
 
-int modemFileSize(const String& filename) {
-  if (!modemInitialized) {
-    return -1;
-  }
-  return -1;
-}
-
 bool saveConfigToModem(const ModemConfig& config) {
   rtt.println("Saving configuration to modem...");
-  DynamicJsonDocument doc(16000);
-  doc["device_name"] = config.device_name;
-  doc["transmission_interval"] = config.transmission_interval;
-  doc["transmission_interval_motion"] = config.transmission_interval_motion;
-  doc["enable_gps"] = config.enable_gps;
-  doc["gps_timeout"] = config.gps_timeout;
-  doc["server_url"] = config.server_url;
-  doc["server_endpoint"] = config.server_endpoint;
-  doc["server_port"] = config.server_port;
+  DynamicJsonDocument doc(8000);
+  doc["dn"] = config.device_name;
+  doc["ti"] = config.transmission_interval;
+  doc["tim"] = config.transmission_interval_motion;
+  doc["eg"] = config.enable_gps;
+  doc["gt"] = config.gps_timeout;
+  doc["su"] = config.server_url;
+  doc["se"] = config.server_endpoint;
+  doc["sp"] = config.server_port;
   doc["apn"] = config.apn;
-  doc["username"] = config.username;
-  doc["password"] = config.password;
-  doc["enable_storage"] = config.enable_storage;
-  doc["max_stored_files"] = config.max_stored_files;
-  doc["wifi_scan_enabled"] = config.wifi_scan_enabled;
-  doc["wifi_scan_max_networks"] = config.wifi_scan_max_networks;
-  doc["ble_scan_enabled"] = config.ble_scan_enabled;
-  doc["ble_scan_max_beacons"] = config.ble_scan_max_beacons;
-  doc["ble_scan_duration"] = config.ble_scan_duration;
-  doc["modem_shutdown_between_loops"] = config.modem_shutdown_between_loops;
-  doc["motion_detection_enabled"] = config.motion_detection_enabled;
-  doc["motion_threshold"] = config.motion_threshold;
-  doc["modem_shutdown_on_motion"] = config.modem_shutdown_on_motion;
+  doc["un"] = config.username;
+  doc["pw"] = config.password;
+  doc["es"] = config.enable_storage;
+  doc["msf"] = config.max_stored_files;
+  doc["wse"] = config.wifi_scan_enabled;
+  doc["wsmn"] = config.wifi_scan_max_networks;
+  doc["bse"] = config.ble_scan_enabled;
+  doc["bsmb"] = config.ble_scan_max_beacons;
+  doc["bsd"] = config.ble_scan_duration;
+  doc["msbl"] = config.modem_shutdown_between_loops;
+  doc["mde"] = config.motion_detection_enabled;
+  doc["mt"] = config.motion_threshold;
+  doc["msom"] = config.modem_shutdown_on_motion;
   String configJson = "";
   serializeJson(doc, configJson);
   delay(10);
@@ -1458,12 +1216,12 @@ bool loadConfigFromModem(ModemConfig& config) {
     rtt.println("Config file not found, using defaults");
     return false;
   }
-  if (!modemFileOpen(filename, 0)) { // Mode 0 = read only
+  if (!modemFileOpen(filename, 0)) {
     rtt.println("Failed to open config file for reading");
     return false;
   }
   String configData;
-  if (!modemFileRead(configData, 1024)) { // Read up to 512 bytes
+  if (!modemFileRead(configData, 1024)) {
     rtt.println("Failed to read config data");
     modemFileClose();
     return false;
@@ -1477,73 +1235,72 @@ bool loadConfigFromModem(ModemConfig& config) {
     rtt.print("Error code: "); rtt.println(error.code());
     return false;
   }
-  if (doc.containsKey("device_name")) {
-    config.device_name = doc["device_name"].as<String>();
+  if (doc.containsKey("dn")) {
+    config.device_name = doc["dn"].as<String>();
   }
-  if (doc.containsKey("transmission_interval")) {
-    config.transmission_interval = doc["transmission_interval"].as<unsigned long>();
+  if (doc.containsKey("ti")) {
+    config.transmission_interval = doc["ti"].as<unsigned long>();
   }
-  if (doc.containsKey("transmission_interval_motion")) {
-    config.transmission_interval_motion = doc["transmission_interval_motion"].as<unsigned long>();
+  if (doc.containsKey("tim")) {
+    config.transmission_interval_motion = doc["tim"].as<unsigned long>();
   }
-  if (doc.containsKey("enable_gps")) {
-    config.enable_gps = doc["enable_gps"].as<bool>();
+  if (doc.containsKey("eg")) {
+    config.enable_gps = doc["eg"].as<bool>();
   }
-  if (doc.containsKey("gps_timeout")) {
-    config.gps_timeout = doc["gps_timeout"].as<unsigned long>();
+  if (doc.containsKey("gt")) {
+    config.gps_timeout = doc["gt"].as<unsigned long>();
   }
-  if (doc.containsKey("server_url")) {
-    config.server_url = doc["server_url"].as<String>();
+  if (doc.containsKey("su")) {
+    config.server_url = doc["su"].as<String>();
   }
-  if (doc.containsKey("server_endpoint")) {
-    config.server_endpoint = doc["server_endpoint"].as<String>();
+  if (doc.containsKey("se")) {
+    config.server_endpoint = doc["se"].as<String>();
   }
-  if (doc.containsKey("server_port")) {
-    config.server_port = doc["server_port"].as<int>();
+  if (doc.containsKey("sp")) {
+    config.server_port = doc["sp"].as<int>();
   }
   if (doc.containsKey("apn")) {
     config.apn = doc["apn"].as<String>();
   }
-  if (doc.containsKey("username")) {
-    config.username = doc["username"].as<String>();
+  if (doc.containsKey("un")) {
+    config.username = doc["un"].as<String>();
   }
-  if (doc.containsKey("password")) {
-    config.password = doc["password"].as<String>();
+  if (doc.containsKey("pw")) {
+    config.password = doc["pw"].as<String>();
   }
-  if (doc.containsKey("enable_storage")) {
-    config.enable_storage = doc["enable_storage"].as<bool>();
+  if (doc.containsKey("es")) {
+    config.enable_storage = doc["es"].as<bool>();
   }
-  if (doc.containsKey("max_stored_files")) {
-    config.max_stored_files = doc["max_stored_files"].as<int>();
+  if (doc.containsKey("msf")) {
+    config.max_stored_files = doc["msf"].as<int>();
   }
-  if (doc.containsKey("wifi_scan_enabled")) {
-    config.wifi_scan_enabled = doc["wifi_scan_enabled"].as<bool>();
+  if (doc.containsKey("wse")) {
+    config.wifi_scan_enabled = doc["wse"].as<bool>();
   }
-  if (doc.containsKey("wifi_scan_max_networks")) {
-    config.wifi_scan_max_networks = doc["wifi_scan_max_networks"].as<int>();
+  if (doc.containsKey("wsmn")) {
+    config.wifi_scan_max_networks = doc["wsmn"].as<int>();
   }
-  if (doc.containsKey("ble_scan_enabled")) {
-    config.ble_scan_enabled = doc["ble_scan_enabled"].as<bool>();
+  if (doc.containsKey("bse")) {
+    config.ble_scan_enabled = doc["bse"].as<bool>();
   }
-  if (doc.containsKey("ble_scan_max_beacons")) {
-    config.ble_scan_max_beacons = doc["ble_scan_max_beacons"].as<int>();
+  if (doc.containsKey("bsmb")) {
+    config.ble_scan_max_beacons = doc["bsmb"].as<int>();
   }
-  if (doc.containsKey("ble_scan_duration")) {
-    config.ble_scan_duration = doc["ble_scan_duration"].as<unsigned long>();
+  if (doc.containsKey("bsd")) {
+    config.ble_scan_duration = doc["bsd"].as<unsigned long>();
   }
-  if (doc.containsKey("modem_shutdown_between_loops")) {
-    config.modem_shutdown_between_loops = doc["modem_shutdown_between_loops"].as<bool>();
+  if (doc.containsKey("msbl")) {
+    config.modem_shutdown_between_loops = doc["msbl"].as<bool>();
   }
-  if (doc.containsKey("motion_detection_enabled")) {
-    config.motion_detection_enabled = doc["motion_detection_enabled"].as<bool>();
+  if (doc.containsKey("mde")) {
+    config.motion_detection_enabled = doc["mde"].as<bool>();
   }
-  if (doc.containsKey("motion_threshold")) {
-    config.motion_threshold = doc["motion_threshold"].as<float>();
+  if (doc.containsKey("mt")) {
+    config.motion_threshold = doc["mt"].as<float>();
   }
-  if (doc.containsKey("modem_shutdown_on_motion")) {
-    config.modem_shutdown_on_motion = doc["modem_shutdown_on_motion"].as<bool>();
+  if (doc.containsKey("msom")) {
+    config.modem_shutdown_on_motion = doc["msom"].as<bool>();
   }
-  //rtt.println("Configuration loaded successfully");
   return true;
 }
 
@@ -1576,12 +1333,10 @@ void LoadDeviceConfig() {
     rtt.println("Saving new configuration:");
     if (saveConfigToModem(newconfig)) {
       rtt.println("config saved successfully");
-      printConfig(newconfig);
     } else {
       rtt.println("Failed to save test config");
     }
   }
-  // Load configuration from modem storage
   if(loadConfigFromModem(deviceConfig)) {
     rtt.println("Configuration loaded successfully:");
     printConfig(deviceConfig);
@@ -1631,9 +1386,7 @@ void powerdownESP() {
   Serial2.end();
   pinMode(ESP_GPIO0, INPUT);
   digitalWrite(ESP_PWR, LOW);
-  delay(50);
   espon = false;
-  // Power down the rail if modem is also off
   if (!modemon) {
     rtt.println("Powering down ESP/Modem power rail...");
     digitalWrite(MODEM_ESP_PWR, LOW);
@@ -1664,14 +1417,10 @@ void ScanForWiFiNetworks() {
     if (sendESPCommandAndGetResponse("AT+CWLAP", response, 16000)) {
       rtt.println("WiFi scan successful");
       sensorData.wifi_scan_data = parseCWLAPData(response);
-      rtt.print("Length: "); rtt.println(sensorData.wifi_scan_data.length());
-      //rtt.print("JSON: "); rtt.println(sensorData.wifi_scan_data);
     } else {
       rtt.println("WiFi scan failed or incomplete response");
       rtt.println("Attempting to parse anyway:");
       sensorData.wifi_scan_data = parseCWLAPData(response);
-      rtt.print("Length: "); rtt.println(sensorData.wifi_scan_data.length());
-      //rtt.print("JSON: "); rtt.println(sensorData.wifi_scan_data);
     }
   } else {
     rtt.println("ESP serial initialization failed");
@@ -1684,13 +1433,10 @@ bool readESPResponse(String& response, unsigned long timeout) {
   unsigned long startTime = millis();
   bool foundOK = false;
   bool foundError = false;
-  
   while (millis() - startTime < timeout && !foundOK && !foundError) {
     while (Serial2.available()) {
       char c = Serial2.read();
       response += c;
-      
-      // Check for \r\nOK\r\n pattern
       if (response.length() >= 6) {
         int lastIndex = response.length() - 1;
         if (response.charAt(lastIndex) == '\n' && 
@@ -1703,8 +1449,6 @@ bool readESPResponse(String& response, unsigned long timeout) {
           break;
         }
       }
-      
-      // Check for ERROR pattern
       if (response.length() >= 7) {
         int lastIndex = response.length() - 1;
         if (response.charAt(lastIndex) == '\n' && 
@@ -1719,14 +1463,10 @@ bool readESPResponse(String& response, unsigned long timeout) {
         }
       }
     }
-    
-    // Small delay to prevent busy waiting
     if (!foundOK && !foundError) {
       delayMicroseconds(100);
     }
   }
-  
-  // Return true if we found OK, false if we found ERROR or timed out
   return foundOK;
 }
 
@@ -1797,30 +1537,21 @@ void checkModemStorageSpace() {
     rtt.println("Modem not initialized, cannot check storage space");
     return;
   }
-  
   rtt.println("Checking Modem Storage Space");
-  
-  // Check UFS storage space
   modem.sendAT(GF("+QFLDS=\"UFS\""));
   delay(100); // Give modem time to process
   String response = modem.stream.readString();
-  
   if (response.indexOf("+QFLDS:") != -1) {
-    // Parse the response: +QFLDS: <freesize>,<total_size>
-    // Example: +QFLDS: 1249984,1562624
     int start = response.indexOf("+QFLDS:") + 7;
     int comma = response.indexOf(",", start);
     int end = response.indexOf("\r", comma);
-    
     if (start > 6 && comma > start && end > comma) {
       String freeSizeStr = response.substring(start, comma);
       String totalSizeStr = response.substring(comma + 1, end);
-      
       unsigned long freeSize = freeSizeStr.toInt();
       unsigned long totalSize = totalSizeStr.toInt();
       unsigned long usedSize = totalSize - freeSize;
       float usedPercent = (float)usedSize / totalSize * 100.0;
-  
       rtt.print("UFS Storage - Free: "); rtt.print(freeSize);
       rtt.print(" bytes, Total: "); rtt.print(totalSize);
       rtt.print(" bytes, Used: "); rtt.print(usedSize);
@@ -1832,11 +1563,9 @@ void checkModemStorageSpace() {
   } else {
     rtt.println("UFS storage command failed or not supported");
   }
-  // Check EUFS storage space (Extended UFS on AP side)
   modem.sendAT(GF("+QFLDS=\"EUFS\""));
   delay(100); // Give modem time to process
   if (response.indexOf("+QFLDS:") != -1) {
-    // Parse the response: +QFLDS: <freesize>,<total_size>
     int start = response.indexOf("+QFLDS:") + 7;
     int comma = response.indexOf(",", start);
     int end = response.indexOf("\r", comma);
@@ -1862,8 +1591,6 @@ void checkModemStorageSpace() {
   delay(100); // Give modem time to process
   response = modem.stream.readString();
   if (response.indexOf("+QFLDS:") != -1) {
-    // Parse the response: +QFLDS: <UFS_file_size>,<UFS_file_number>
-    // Example: +QFLDS: 2330,5
     int start = response.indexOf("+QFLDS:") + 7;
     int comma = response.indexOf(",", start);
     int end = response.indexOf("\r", comma);
@@ -1883,64 +1610,39 @@ void checkModemStorageSpace() {
   rtt.println("|----------------------------------|");
 }
 
-// WiFi scan data parser
 String parseCWLAPData(const String& cwlapResponse) {
   rtt.print("Input length: "); rtt.println(cwlapResponse.length());
-  delay(10);
-  
-  // Check for empty input
   if (cwlapResponse.length() < 26) {
     rtt.println("parseCWLAPData: Empty input, returning empty result");
     rtt.println("parseCWLAPData: Input: "); rtt.println(cwlapResponse);
     return "{\"count\":0,\"ts\":" + String(millis()) + "}";
   }
-  
   DynamicJsonDocument doc(16000);
-  
   JsonArray networks = doc.createNestedArray("nets");
   if (networks.isNull()) {
     rtt.println("parseCWLAPData: Failed to create networks array");
     return "{\"count\":0,\"ts\":" + String(millis()) + "}";
   }
-  // Process response line by line without storing all lines
   int networksAdded = 0;
   size_t lineStart = 0;
-
   for (size_t i = 0; i < cwlapResponse.length(); i++) {
     char c = cwlapResponse.charAt(i);
-    
-    // Check for line end
     if (c == '\n' || c == '\r') {
       if (i > lineStart) {
-        // Extract current line
         String line = cwlapResponse.substring(lineStart, i);
         line.trim();
-        
-        // Check if this is a CWLAP line
         if (line.startsWith("+CWLAP:(")) {
-          //rtt.println("parseCWLAPData: Found CWLAP line");
-          //delay(10);
-          
-          // Check line length before substring
           if (line.length() < 9) {
             rtt.println("parseCWLAPData: Line too short, skipping");
             delay(10);
             lineStart = i + 1;
             continue;
           }
-          
-          // Remove the +CWLAP:( prefix and ) suffix
           String data = line.substring(8, line.length() - 1);
-
-          // Parse the comma-separated values
           String values[12]; // Max 12 values per network
           int valueCount = 0;
           bool inQuotes = false;
           size_t valueStart = 0;
-          
-          //rtt.println("parseCWLAPData: Starting value parsing");
-          delay(10);
-          
           for (size_t j = 0; j < data.length() && valueCount < 12; j++) {
             char dataChar = data.charAt(j);
             
@@ -1949,71 +1651,48 @@ String parseCWLAPData(const String& cwlapResponse) {
             } else if (dataChar == ',' && !inQuotes) {
               if (j > valueStart) {
                 values[valueCount] = data.substring(valueStart, j);
-                //rtt.print("parseCWLAPData: Value "); rtt.print(valueCount); rtt.print(": "); rtt.println(values[valueCount]);
                 valueCount++;
               }
               valueStart = j + 1;
             }
           }
-          
-          // Add the last value
           if (valueStart < data.length()) {
             values[valueCount] = data.substring(valueStart);
             valueCount++;
           }
-          
-          //rtt.print("parseCWLAPData: Total values parsed: "); rtt.println(valueCount);
-          
-          // Create network object if we have enough values
           if (valueCount >= 4) {
-            
             JsonObject network = networks.createNestedObject();
             if (network.isNull()) {
               rtt.println("parseCWLAPData: Failed to create network object");
               continue;
             }
-            
-            // Parse encryption type
             int enc = values[0].toInt();
-            network["enc"] = enc;
-            
-            // Parse SSID (remove quotes)
+            network["e"] = enc;
             String ssid = values[1];
             if (ssid.startsWith("\"") && ssid.endsWith("\"") && ssid.length() > 2) {
               ssid = ssid.substring(1, ssid.length() - 1);
             }
-            network["ssid"] = ssid;
-            
-            // Parse RSSI
+            network["s"] = ssid;
             int rssi = values[2].toInt();
-            network["rssi"] = rssi;
-            
-            // Parse MAC address (remove quotes)
+            network["r"] = rssi;
             String mac = values[3];
             if (mac.startsWith("\"") && mac.endsWith("\"") && mac.length() > 2) {
               mac = mac.substring(1, mac.length() - 1);
             }
-            network["mac"] = mac;
-            
-            // Parse channel
+            mac.replace(":", "");
+            network["m"] = mac;
             if (valueCount > 4) {
-              network["ch"] = values[4].toInt();
+              network["c"] = values[4].toInt();
             }
-            
-            // Parse authentication mode
             if (valueCount > 5) {
-              network["auth"] = values[5].toInt();
+              network["a"] = values[5].toInt();
             }
-            
-            // Parse additional fields if available (only store if non-zero)
-            if (valueCount > 6 && values[6].toInt() != 0) network["f6"] = values[6].toInt();
-            if (valueCount > 7 && values[7].toInt() != 0) network["f7"] = values[7].toInt();
-            if (valueCount > 8 && values[8].toInt() != 0) network["f8"] = values[8].toInt();
-            if (valueCount > 9 && values[9].toInt() != 0) network["f9"] = values[9].toInt();
-            if (valueCount > 10 && values[10].toInt() != 0) network["f10"] = values[10].toInt();
-            
+            if (valueCount > 6 && values[6].toInt() != 0) network["6"] = values[6].toInt();
+            if (valueCount > 7 && values[7].toInt() != 0) network["7"] = values[7].toInt();
+            if (valueCount > 8 && values[8].toInt() != 0) network["8"] = values[8].toInt();
+            if (valueCount > 9 && values[9].toInt() != 0) network["9"] = values[9].toInt();
+            if (valueCount > 10 && values[10].toInt() != 0) network["1"] = values[10].toInt();
             networksAdded++;
-            // Check if we've reached the maximum
             if (networksAdded >= deviceConfig.wifi_scan_max_networks) {
               rtt.println("parseCWLAPData: Reached maximum networks, stopping");
               break;
@@ -2026,40 +1705,20 @@ String parseCWLAPData(const String& cwlapResponse) {
       lineStart = i + 1;
     }
   }
-  
-  rtt.println("parseCWLAPData: Line processing completed");
-  
-  // Add summary information
-  doc["count"] = networks.size();
-  doc["ts"] = millis();
-  
   rtt.print("parseCWLAPData: Final network count: "); rtt.println(networks.size());
-  
-  // Serialize to string (compact format)
   String jsonOutput = "";
   serializeJson(doc, jsonOutput);
-  
   rtt.print("parseCWLAPData: JSON output length: "); rtt.println(jsonOutput.length());
-  rtt.println("parseCWLAPData: Function completed successfully");
-  
   return jsonOutput;
 }
 
-// Function to send large JSON data in a more memory-efficient way
 bool sendLargeJsonData(HttpClient& http, const DynamicJsonDocument& doc, const String& endpoint) {
-  // First, try to serialize the entire document
   String jsonData;
   jsonData.reserve(measureJson(doc) + 100);
-  
   if (serializeJson(doc, jsonData) == 0) {
     rtt.println("JSON serialization failed");
     return false;
   }
-  
-  // If JSON is very large (>20KB), use chunked transfer
-  if (jsonData.length() > 20000) {
-    rtt.println("Using chunked transfer for large payload");
-    
     http.beginRequest();
     http.post(endpoint);
     http.sendHeader("Content-Type", "application/json");
@@ -2067,123 +1726,41 @@ bool sendLargeJsonData(HttpClient& http, const DynamicJsonDocument& doc, const S
     http.sendHeader("Accept", "application/json");
     http.sendHeader("User-Agent", "NRF-Firmware/1.0");
     http.sendHeader("Connection", "close");
-    
-    // Send data in chunks
-    const int chunkSize = 512; // 2KB chunks
+    const int chunkSize = 512;
     int totalSent = 0;
-    
     for (size_t i = 0; i < jsonData.length(); i += chunkSize) {
       size_t chunkLength = min(chunkSize, jsonData.length() - i);
       String chunk = jsonData.substring(i, i + chunkLength);
-      
-      // Send chunk length in hex
       http.print(String(chunkLength, HEX));
       http.print("\r\n");
-      
-      // Send chunk data
       if (http.print(chunk) != chunkLength) {
         rtt.println("Failed to send chunk");
         return false;
       }
-      
       http.print("\r\n");
       totalSent += chunkLength;
-      
-      // Small delay to prevent overwhelming the modem
       delay(20);
     }
-    
-    // Send end chunk
     http.print("0\r\n\r\n");
     rtt.print("Sent "); rtt.print(totalSent); rtt.println(" bytes in chunks");
-    
-  } else {
-    // For smaller payloads, use regular transfer
-    http.beginRequest();
-    http.post(endpoint);
-    http.sendHeader("Content-Type", "application/json");
-    http.sendHeader("Content-Length", jsonData.length());
-    http.sendHeader("Accept", "application/json");
-    http.sendHeader("User-Agent", "NRF-Firmware/1.0");
-    http.sendHeader("Connection", "close");
-    
-    http.beginBody();
-    
-    // Send data in smaller chunks for reliability
-    const int chunkSize = 1024;
-    int totalSent = 0;
-    
-    for (size_t i = 0; i < jsonData.length(); i += chunkSize) {
-      size_t chunkLength = min(chunkSize, jsonData.length() - i);
-      String chunk = jsonData.substring(i, i + chunkLength);
-      
-      if (http.print(chunk) != chunkLength) {
-        rtt.println("Failed to send chunk");
-        return false;
-      }
-      totalSent += chunkLength;
-      delay(10);
-    }
-    
-    rtt.print("Sent "); rtt.print(totalSent); rtt.println(" bytes");
-  }
-  
   http.endRequest();
   return true;
 }
 
-// Function to intelligently handle large scan data
-void optimizeScanData(DynamicJsonDocument& doc, size_t maxSize) {
-  size_t currentSize = measureJson(doc);
-  
-  if (currentSize <= maxSize) {
-    return; // No optimization needed
-  }
-  
-  rtt.print("JSON size "); rtt.print(currentSize); rtt.print(" exceeds limit "); rtt.print(maxSize); rtt.println(", optimizing...");
-  
-  // First, try to truncate BLE data (usually larger)
-  if (doc.containsKey("ble")) {
-    rtt.println("Truncating BLE scan data");
-    doc.remove("ble");
-    currentSize = measureJson(doc);
-    rtt.print("After BLE removal: "); rtt.print(currentSize); rtt.println(" bytes");
-  }
-  
-  // If still too large, truncate WiFi data
-  if (currentSize > maxSize && doc.containsKey("wifi")) {
-    rtt.println("Truncating WiFi scan data");
-    doc.remove("wifi");
-    currentSize = measureJson(doc);
-    rtt.print("After WiFi removal: "); rtt.print(currentSize); rtt.println(" bytes");
-  }
-  
-  if (currentSize <= maxSize) {
-    rtt.println("Optimization successful");
-  } else {
-    rtt.println("Warning: JSON still exceeds size limit after optimization");
-  }
-}
-
 bool waitForNextTransmission(unsigned long interval) {
   unsigned long currentTime = millis();
-  
-  // Choose interval based on motion detection
   unsigned long effectiveInterval = interval;
   if (deviceConfig.motion_detection_enabled && globalMotionDetected) {
     effectiveInterval = deviceConfig.transmission_interval_motion;
   }
-  // Check if it's time for the next transmission
   if (currentTime - lastWaitCheck >= effectiveInterval) {
     lastWaitCheck = currentTime;
     return true; // Time to transmit
   }
-  
   return false; // Still waiting
 }
 
 void performBackgroundTasks() {
-  // Turn off on sw long press
   if(digitalRead(PWR_SW_IN)){
     rtt.println("Button pressed");
     digitalWrite(GREEN_LED,LOW);
@@ -2202,20 +1779,9 @@ void performBackgroundTasks() {
       lastWaitCheck = 0;
     }
   }
-  
-  if (deviceConfig.motion_detection_enabled && millis() - lastMotionCheck > 100) {
-    // Read current accelerometer values
-    
     if (readAccelerometers(currentAcc1X, currentAcc1Y, currentAcc1Z, currentAcc2X, currentAcc2Y, currentAcc2Z)) {
-      // Calculate acceleration differences
-      float acc1Diff = sqrt(pow(currentAcc1X - lastAcc1X, 2) + 
-                           pow(currentAcc1Y - lastAcc1Y, 2) + 
-                           pow(currentAcc1Z - lastAcc1Z, 2));
-      float acc2Diff = sqrt(pow(currentAcc2X - lastAcc2X, 2) + 
-                           pow(currentAcc2Y - lastAcc2Y, 2) + 
-                           pow(currentAcc2Z - lastAcc2Z, 2));
-      
-      // Check if motion is detected using configured threshold
+      float acc1Diff = sqrt(pow(currentAcc1X - lastAcc1X, 2) + pow(currentAcc1Y - lastAcc1Y, 2) + pow(currentAcc1Z - lastAcc1Z, 2));
+      float acc2Diff = sqrt(pow(currentAcc2X - lastAcc2X, 2) + pow(currentAcc2Y - lastAcc2Y, 2) + pow(currentAcc2Z - lastAcc2Z, 2));
       if (acc1Diff > deviceConfig.motion_threshold || acc2Diff > deviceConfig.motion_threshold) {
         if (!globalMotionDetected) {
           globalMotionDetected = true;
@@ -2232,59 +1798,42 @@ void performBackgroundTasks() {
       lastAcc2Y = currentAcc2Y;
       lastAcc2Z = currentAcc2Z;
     }
-    
-    lastMotionCheck = millis();
-  }
   delay(100);
 }
 
-// Function to parse JSON response from server
 bool parseServerResponse(const String& response, JsonDocument& doc) {
-  // Find the start of JSON data (after headers)
   int jsonStart = response.indexOf('{');
   if (jsonStart == -1) {
     rtt.println("No JSON data found in response");
     return false;
   }
-  
-  // Extract JSON part
   String jsonData = response.substring(jsonStart);
-  
-  // Parse JSON
   DeserializationError error = deserializeJson(doc, jsonData);
   if (error) {
     rtt.print("JSON parsing failed: ");
     rtt.println(error.c_str());
     return false;
   }
-  
   return true;
 }
 
-// Function to read complete HTTP response with larger buffer
 String readCompleteHttpResponse(HttpClient& http, unsigned long timeout) {
   String response;
-  response.reserve(8192); // Reserve 8KB for response
-  
+  response.reserve(8192);
   unsigned long startTime = millis();
   bool readingBody = false;
   bool chunkedTransfer = false;
   int expectedLength = 0;
   unsigned long lastDataTime = millis();
-  
   while (millis() - startTime < timeout) {
     if (http.available()) {
       char c = http.read();
       response += c;
       lastDataTime = millis();
-      
-      // Check for chunked transfer encoding
       if (!chunkedTransfer && response.indexOf("Transfer-Encoding: chunked") != -1) {
         chunkedTransfer = true;
         rtt.println("Detected chunked transfer encoding");
       }
-      
-      // Check for content length
       if (!readingBody && response.indexOf("Content-Length:") != -1) {
         int lengthStart = response.indexOf("Content-Length:") + 15;
         int lengthEnd = response.indexOf("\r\n", lengthStart);
@@ -2295,22 +1844,16 @@ String readCompleteHttpResponse(HttpClient& http, unsigned long timeout) {
           rtt.print("Expected content length: "); rtt.println(expectedLength);
         }
       }
-      
-      // Check for end of headers
       if (!readingBody && response.indexOf("\r\n\r\n") != -1) {
         readingBody = true;
         rtt.println("Headers complete, reading body");
       }
-      
-      // For chunked transfer, look for end chunk
       if (chunkedTransfer && readingBody) {
         if (response.indexOf("0\r\n\r\n") != -1) {
           rtt.println("Chunked transfer complete");
           break;
         }
       }
-      
-      // For regular transfer, check content length
       else if (!chunkedTransfer && readingBody && expectedLength > 0) {
         int bodyStart = response.indexOf("\r\n\r\n") + 4;
         if (bodyStart > 4) {
@@ -2322,7 +1865,6 @@ String readCompleteHttpResponse(HttpClient& http, unsigned long timeout) {
         }
       }
     } else {
-      // If no data for 2 seconds and we have some response, assume it's complete
       if (readingBody && (millis() - lastDataTime) > 2000 && response.length() > 100) {
         rtt.println("No more data for 2 seconds, assuming response complete");
         break;
@@ -2330,46 +1872,18 @@ String readCompleteHttpResponse(HttpClient& http, unsigned long timeout) {
       delay(10); // Small delay to prevent busy waiting
     }
   }
-  
-  rtt.print("Total response length: "); rtt.println(response.length());
-  
-  // Check if response seems complete
-  if (response.length() < 50) {
-    rtt.println("Warning: Response seems too short");
-  }
-  
   return response;
 }
 
-// Function to properly shutdown modem with cleanup
 void shutdownModem() {
   rtt.println("Performing complete modem shutdown...");
-  
-  // Disconnect from network first
-  if (modemInitialized && modem.isGprsConnected()) {
-    rtt.println("Disconnecting from network...");
-    disconnectFromNetwork();
-  }
-  
-  // Close any open files
-  if (fileOpen) {
-    rtt.println("Closing open files...");
-    modemFileClose();
-  }
-  
-  // Power down modem
-  if (modemon) {
-    rtt.println("Powering down modem...");
-    powerdownmodem();
-  }
-  
-  // Reset initialization flags
+  if (modemInitialized && modem.isGprsConnected())disconnectFromNetwork();
+  if (fileOpen)modemFileClose();
+  if (modemon)powerdownmodem();
   modemInitialized = false;
-  
   rtt.println("Modem shutdown complete");
 }
 
-// Function to initialize modem if needed
 bool initializeModemIfNeeded() {
   if (!modemInitialized) {
     rtt.println("Modem not initialized, initializing...");
@@ -2377,48 +1891,28 @@ bool initializeModemIfNeeded() {
   }
   return true;
 }
-// Function to check if modem should be kept powered on based on motion
+
 bool shouldKeepModemPowered() {
   if (!deviceConfig.modem_shutdown_between_loops) {
     return true; // Always keep modem on if shutdown is disabled
   }
-  
   if (deviceConfig.modem_shutdown_on_motion && globalMotionDetected) {
     return true; // Keep modem on if motion detected and configured to do so
   }
-  
-  return false; // Shutdown modem normally
-}
-
-// Function to get current power management status
-void logPowerManagementStatus() {
-  rtt.print("Power Management - Modem Shutdown: ");
-  rtt.print(deviceConfig.modem_shutdown_between_loops ? "Enabled" : "Disabled");
-  rtt.print(", Motion Shutdown: ");
-  rtt.print(deviceConfig.modem_shutdown_on_motion ? "Enabled" : "Disabled");
-  rtt.print(", Motion Detected: ");
-  rtt.print(globalMotionDetected ? "Yes" : "No");
-  rtt.print(", Keep Modem On: ");
-  rtt.println(shouldKeepModemPowered() ? "Yes" : "No");
+  return false;
 }
 
 void checkAllInterruptFlags() {
     rtt.println("=== Interrupt Status Check ===");
-    
-    // Check NVIC pending interrupts
     bool hasPending = false;
     for (int i = 0; i < 8; i++) {
         if (NVIC->ISPR[i] != 0) {
             rtt.print("NVIC pending in word "); rtt.print(i); rtt.print(": 0x"); rtt.println(NVIC->ISPR[i], HEX);
-            
-            // Identify specific interrupt sources
             uint32_t pending = NVIC->ISPR[i];
             for (int bit = 0; bit < 32; bit++) {
                 if (pending & (1 << bit)) {
                     int irq_num = i * 32 + bit;
                     rtt.print("    IRQ "); rtt.print(irq_num); rtt.print(" (bit "); rtt.print(bit); rtt.print("): ");
-                    
-                    // Map IRQ numbers to peripherals
                     switch (irq_num) {
                         case 38: rtt.println("UARTE0"); break;
                         case 39: rtt.println("UARTE1"); break;
@@ -2468,51 +1962,31 @@ void checkAllInterruptFlags() {
         }
     }
     if(hasPending){
-    
-    // Check UART interrupts with detailed event analysis
     if (NRF_UARTE0->INTENSET != 0) {
         rtt.print("UARTE0 interrupts enabled: 0x"); rtt.println(NRF_UARTE0->INTENSET, HEX);
-        
-        // Check specific UARTE0 events
         rtt.println("UARTE0 Event Analysis:");
-        
-        // Check ENDRX (End of RX buffer transfer)
         if (NRF_UARTE0->EVENTS_ENDRX) {
             rtt.println("  - ENDRX event: PENDING");
         }
-        
-        // Check ENDTX (End of TX buffer transfer)
         if (NRF_UARTE0->EVENTS_ENDTX) {
             rtt.println("  - ENDTX event: PENDING");
         }
-        
-        // Check ERROR event
         if (NRF_UARTE0->EVENTS_ERROR) {
             rtt.println("  - ERROR event: PENDING");
             rtt.print("    Error source: 0x"); rtt.println(NRF_UARTE0->ERRORSRC, HEX);
         }
-        
-        // Check RXTO (RX timeout)
         if (NRF_UARTE0->EVENTS_RXTO) {
             rtt.println("  - RXTO event: PENDING");
         }
-        
-        // Check RXSTARTED
         if (NRF_UARTE0->EVENTS_RXSTARTED) {
             rtt.println("  - RXSTARTED event: PENDING");
         }
-        
-        // Check TXSTARTED
         if (NRF_UARTE0->EVENTS_TXSTARTED) {
             rtt.println("  - TXSTARTED event: PENDING");
         }
-        
-        // Check TXSTOPPED
         if (NRF_UARTE0->EVENTS_TXSTOPPED) {
             rtt.println("  - TXSTOPPED event: PENDING");
         }
-        
-        // Show enabled interrupts vs pending events
         rtt.print("  Enabled interrupts: ");
         if (NRF_UARTE0->INTENSET & UARTE_INTENSET_ENDRX_Msk) rtt.print("ENDRX ");
         if (NRF_UARTE0->INTENSET & UARTE_INTENSET_ENDTX_Msk) rtt.print("ENDTX ");
@@ -2522,8 +1996,6 @@ void checkAllInterruptFlags() {
         if (NRF_UARTE0->INTENSET & UARTE_INTENSET_TXSTARTED_Msk) rtt.print("TXSTARTED ");
         if (NRF_UARTE0->INTENSET & UARTE_INTENSET_TXSTOPPED_Msk) rtt.print("TXSTOPPED ");
         rtt.println();
-        
-        // Show pending events
         rtt.print("  Pending events: ");
         if (NRF_UARTE0->EVENTS_ENDRX) rtt.print("ENDRX ");
         if (NRF_UARTE0->EVENTS_ENDTX) rtt.print("ENDTX ");
@@ -2534,11 +2006,8 @@ void checkAllInterruptFlags() {
         if (NRF_UARTE0->EVENTS_TXSTOPPED) rtt.print("TXSTOPPED ");
         rtt.println();
     }
-    
     if (NRF_UARTE1->INTENSET != 0) {
         rtt.print("UARTE1 interrupts enabled: 0x"); rtt.println(NRF_UARTE1->INTENSET, HEX);
-        
-        // Check specific UARTE1 events
         rtt.println("UARTE1 Event Analysis:");
         if (NRF_UARTE1->EVENTS_ENDRX) rtt.println("  - ENDRX event: PENDING");
         if (NRF_UARTE1->EVENTS_ENDTX) rtt.println("  - ENDTX event: PENDING");
@@ -2548,26 +2017,16 @@ void checkAllInterruptFlags() {
         if (NRF_UARTE1->EVENTS_TXSTARTED) rtt.println("  - TXSTARTED event: PENDING");
         if (NRF_UARTE1->EVENTS_TXSTOPPED) rtt.println("  - TXSTOPPED event: PENDING");
     }
-    
-    // Check I2C interrupts
     if (NRF_TWIM0->INTENSET != 0) {
         rtt.print("TWIM0 interrupts enabled: 0x"); rtt.println(NRF_TWIM0->INTENSET, HEX);
     }
-    
-    // Check GPIO interrupts
     if (NRF_GPIOTE->INTENSET != 0) {
         rtt.print("GPIOTE interrupts enabled: 0x"); rtt.println(NRF_GPIOTE->INTENSET, HEX);
-        
-        // Show detailed GPIOTE analysis if there are pending interrupts
         if (hasPending) {
             rtt.println("GPIOTE Event Analysis:");
-            
-            // Check each GPIOTE channel (0-7)
             for (int ch = 0; ch < 8; ch++) {
                 if (NRF_GPIOTE->EVENTS_IN[ch]) {
                     rtt.print("  - Channel "); rtt.print(ch); rtt.println(" event: PENDING");
-                    
-                    // Show channel configuration
                     uint32_t config = NRF_GPIOTE->CONFIG[ch];
                     rtt.print("    Mode: ");
                     if ((config & GPIOTE_CONFIG_MODE_Msk) == GPIOTE_CONFIG_MODE_Disabled) {
@@ -2577,7 +2036,6 @@ void checkAllInterruptFlags() {
                     } else if ((config & GPIOTE_CONFIG_MODE_Msk) == GPIOTE_CONFIG_MODE_Task) {
                         rtt.print("Task");
                     }
-                    
                     rtt.print(", Pin: "); rtt.print((config & GPIOTE_CONFIG_PSEL_Msk) >> GPIOTE_CONFIG_PSEL_Pos);
                     
                     rtt.print(", Polarity: ");
@@ -2600,8 +2058,6 @@ void checkAllInterruptFlags() {
                     rtt.println();
                 }
             }
-            
-            // Show enabled vs pending
             rtt.print("  Enabled channels: ");
             for (int ch = 0; ch < 8; ch++) {
                 if (NRF_GPIOTE->INTENSET & (1 << ch)) {
@@ -2609,7 +2065,6 @@ void checkAllInterruptFlags() {
                 }
             }
             rtt.println();
-            
             rtt.print("  Pending channels: ");
             for (int ch = 0; ch < 8; ch++) {
                 if (NRF_GPIOTE->EVENTS_IN[ch]) {
@@ -2619,16 +2074,12 @@ void checkAllInterruptFlags() {
             rtt.println();
         }
     }
-    
-    // Check SoftDevice events
     uint32_t evt_id;
     if (sd_evt_get(&evt_id) == NRF_SUCCESS) {
         rtt.print("SoftDevice event pending: 0x"); rtt.println(evt_id, HEX);
     } else {
         rtt.println("No SoftDevice events pending");
     }
-    
-    // Check BLE events - using correct function signature
     uint8_t ble_evt_buffer[sizeof(ble_evt_t)];
     uint16_t ble_evt_len = sizeof(ble_evt_buffer);
     if (sd_ble_evt_get(ble_evt_buffer, &ble_evt_len) == NRF_SUCCESS) {
@@ -2640,73 +2091,46 @@ void checkAllInterruptFlags() {
     if (!hasPending) {
         rtt.println("No NVIC pending interrupts");
     }
-    rtt.println("=== End Interrupt Check ===");
-}
-
-void check1msInterruptSources() {
-    rtt.println("=== 1ms Interrupt Source Check ===");
-    
-    // Check SysTick (most likely culprit)
     rtt.print("SysTick enabled: "); rtt.println((SCB->ICSR & SCB_ICSR_PENDSTSET_Msk) ? "Yes" : "No");
     rtt.print("SysTick pending: "); rtt.println((SCB->ICSR & SCB_ICSR_PENDSTSET_Msk) ? "Yes" : "No");
-    
-    // Check RTC0 (commonly used for 1ms timing)
     rtt.print("RTC0 enabled: "); rtt.println(NRF_RTC0->INTENSET ? "Yes" : "No");
     rtt.print("RTC0 running: "); rtt.println(NRF_RTC0->TASKS_START ? "Yes" : "No");
     rtt.print("RTC0 prescaler: "); rtt.println(NRF_RTC0->PRESCALER);
     rtt.print("RTC0 compare[0]: "); rtt.println(NRF_RTC0->CC[0]);
-    
-    // Check RTC1 (used by SoftDevice)
     rtt.print("RTC1 enabled: "); rtt.println(NRF_RTC1->INTENSET ? "Yes" : "No");
     rtt.print("RTC1 running: "); rtt.println(NRF_RTC1->TASKS_START ? "Yes" : "No");
     rtt.print("RTC1 prescaler: "); rtt.println(NRF_RTC1->PRESCALER);
-    
-    // Check TIMER0 (often used by Arduino)
     rtt.print("TIMER0 enabled: "); rtt.println(NRF_TIMER0->INTENSET ? "Yes" : "No");
     rtt.print("TIMER0 running: "); rtt.println(NRF_TIMER0->TASKS_START ? "Yes" : "No");
     rtt.print("TIMER0 prescaler: "); rtt.println(NRF_TIMER0->PRESCALER);
-    
-    // Check TIMER1
     rtt.print("TIMER1 enabled: "); rtt.println(NRF_TIMER1->INTENSET ? "Yes" : "No");
     rtt.print("TIMER1 running: "); rtt.println(NRF_TIMER1->TASKS_START ? "Yes" : "No");
-    
-    // Check TIMER2
     rtt.print("TIMER2 enabled: "); rtt.println(NRF_TIMER2->INTENSET ? "Yes" : "No");
     rtt.print("TIMER2 running: "); rtt.println(NRF_TIMER2->TASKS_START ? "Yes" : "No");
-    
-    rtt.println("=== End 1ms Interrupt Check ===");
+    rtt.println("=== End Interrupt Check ===");
 }
 
 void scanI2C(){
-    rtt.println("=== I2C Scanner ===");
     rtt.println("Scanning I2C bus for devices...");
     int deviceCount = 0;
-    
-    // Scan only valid I2C addresses (0x08 to 0x77, excluding reserved addresses)
     for (byte address = 8; address < 120; address++) {
-        // Try to communicate with device at this address
         Wire.beginTransmission(address);
         byte error = Wire.endTransmission();
-        
         if (error == 0) {
-            // Device found
             deviceCount++;
-            
-            // Identify common devices
+            rtt.print(address);
             switch (address) {
-                case 0x29: rtt.println("(VEML6035 Light)"); break;
-                case 0x43: rtt.println("(ENS210 Temp/Hum)"); break;
-                case 0x5D: rtt.println("(ENS210 Pres)"); break;
+                case 0x20: rtt.println("(ENS220 Pres)"); has_ens220 = true; break;
+                case 0x29: rtt.println("(VEML6035 Light)"); has_veml60350 = true; break;
+                case 0x43: rtt.println("(ENS210 Temp/Hum)"); has_ens210 = true; break;
+                case 0x5D: rtt.println("(LPS22HB Pres)"); has_lpS22hb = true; break;
                 default: rtt.println("(Unknown)"); break;
             }
         }
-        // Small delay to prevent overwhelming the bus
         delay(1);
-        // Yield to prevent watchdog issues
         if (address % 32 == 0) {
             yield();
         }
     }
     rtt.print("I2C scan completed. Found "); rtt.print(deviceCount); rtt.println(" device(s).");
-    rtt.println("=== End I2C Scanner ===");
 }

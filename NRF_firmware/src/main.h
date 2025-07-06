@@ -9,30 +9,26 @@
 #include <ArduinoHttpClient.h>
 #include <ArduinoJson.h>
 #include <bluefruit.h>
+#include <ens220.h>
 #include "SparkFun_VEML6030_Ambient_Light_Sensor.h"
 #include "sensors.h"
 #include "ens210.h"
 
 SparkFun_Ambient_Light light(AL_ADDR);
-
 Sodaq_LPS22HB barometricSensor;
-
 Adafruit_LIS3DH acc1 = Adafruit_LIS3DH(ACCL1_CS);
 Adafruit_LIS3DH acc2 = Adafruit_LIS3DH(ACCL2_CS);
-
 ENS210 ens210;
-
 RTTStream rtt;
-
+ENS220 ens220;
 TinyGsm       modem(SerialAT);
 TinyGsmClient client(modem);
 
-BLEDfu  bledfu;  // OTA DFU service
-BLEDis  bledis;  // device information
-BLEUart bleuart; // uart over ble
-BLEBas  blebas;  // battery
+BLEDfu  bledfu;
+BLEDis  bledis;
+BLEUart bleuart;
+BLEBas  blebas;
 
-// Configuration Storage
 struct ModemConfig {
   String device_name;
   unsigned long transmission_interval;
@@ -83,62 +79,6 @@ struct ModemConfig {
   }
 };
 
-// BLE scanning variables
-DynamicJsonDocument bleScanDoc(16000);
-JsonArray bleBeacons;
-bool bleScanning = false;
-unsigned long bleScanStartTime = 0;
-int bleBeaconsFound = 0;
-
-void ble_scan_callback(ble_gap_evt_adv_report_t* report);
-void scanforbeacons();
-bool initializeBLE();
-
-// Global motion detection variables
-static bool globalMotionDetected = false;
-static unsigned long globalLastMotionTime = 0;
-
-// Motion detection using accelerometers
-static unsigned long lastMotionCheck = 0;
-static float lastAcc1X = 0, lastAcc1Y = 0, lastAcc1Z = 0;
-static float lastAcc2X = 0, lastAcc2Y = 0, lastAcc2Z = 0;
-float currentAcc1X, currentAcc1Y, currentAcc1Z;
-float currentAcc2X, currentAcc2Y, currentAcc2Z;
-
-bool espmodemrail = 0;
-bool espon = 0;
-bool modemon = 0;
-
-bool espSerialInitialized = false;
-int currentFileHandle = -1;
-bool fileOpen = false;
-volatile int32_t wdcounter = 0;
-unsigned long lastTransmissionTime = 0;
-bool modemInitialized = false;
-
-unsigned long lastWaitCheck = 0;
-
-// Power management functions
-void wd_handler();
-void gpioinit();
-void softpwrup();
-
-// Sensor data management functions
-void sensorpwr(bool onoff);
-void collectAllSensorData();
-
-// New refactored sensor functions (implemented in main.cpp)
-float readBatteryVoltage();
-float readLightSensor(float gain = 0.25, int integrationTime = 100);
-bool readTemperatureHumidity(float& temperature, float& humidity);
-bool readPressure(float& pressure, float& sensorTemp);
-bool readAccelerometers(float& acc1_x, float& acc1_y, float& acc1_z, float& acc2_x, float& acc2_y, float& acc2_z);
-bool readGPS(float& latitude, float& longitude, float& speed, float& altitude, int& visibleSatellites, int& usedSatellites, float& accuracy);
-bool readModemInfo();
-bool readNetworkInfo();
-void checkModemStorageSpace();
-
-// HTTP Data Transmission System
 struct ServerConfig {
   const char* server;
   const char* endpoint;
@@ -148,6 +88,55 @@ struct ServerConfig {
   const char* password;
 };
 
+DynamicJsonDocument bleScanDoc(16000);
+JsonArray bleBeacons;
+bool bleScanning = false;
+unsigned long bleScanStartTime = 0;
+int bleBeaconsFound = 0;
+static bool globalMotionDetected = false;
+static unsigned long globalLastMotionTime = 0;
+static float lastAcc1X = 0, lastAcc1Y = 0, lastAcc1Z = 0;
+static float lastAcc2X = 0, lastAcc2Y = 0, lastAcc2Z = 0;
+float currentAcc1X, currentAcc1Y, currentAcc1Z;
+float currentAcc2X, currentAcc2Y, currentAcc2Z;
+bool espmodemrail = 0;
+bool espon = 0;
+bool modemon = 0;
+bool has_ens220 = false;
+bool has_veml60350 = false;
+bool has_ens210 = false;
+bool has_lpS22hb = false;
+bool espSerialInitialized = false;
+int currentFileHandle = -1;
+bool fileOpen = false;
+volatile int32_t wdcounter = 0;
+unsigned long lastTransmissionTime = 0;
+bool modemInitialized = false;
+unsigned long lastWaitCheck = 0;
+extern unsigned long lastTransmissionTime;
+extern unsigned long transmissionInterval;
+extern bool modemInitialized;
+extern bool enableGPS;
+extern unsigned long gpsTimeout;
+
+extern ModemConfig deviceConfig;
+
+void ble_scan_callback(ble_gap_evt_adv_report_t* report);
+void scanforbeacons();
+bool initializeBLE();
+void gpioinit();
+void softpwrup();
+void sensorpwr(bool onoff);
+void collectAllSensorData();
+float readBatteryVoltage();
+float readLightSensor(float gain = 0.25, int integrationTime = 100);
+bool readTemperatureHumidity(float& temperature, float& humidity);
+bool readPressure(float& pressure, float& sensorTemp);
+bool readAccelerometers(float& acc1_x, float& acc1_y, float& acc1_z, float& acc2_x, float& acc2_y, float& acc2_z);
+bool readGPS(float& latitude, float& longitude, float& speed, float& altitude, int& visibleSatellites, int& usedSatellites, float& accuracy);
+bool readModemInfo();
+bool readNetworkInfo();
+void checkModemStorageSpace();
 bool initializeModem();
 bool connectToNetwork();
 bool disconnectFromNetwork();
@@ -157,17 +146,6 @@ void testModemAndNetwork();
 void manageModemLifecycle();
 void shutdownModem();
 bool initializeModemIfNeeded();
-
-// Data transmission scheduling
-extern unsigned long lastTransmissionTime;
-extern unsigned long transmissionInterval;
-extern bool modemInitialized;
-
-// GPS configuration
-extern bool enableGPS;
-extern unsigned long gpsTimeout;
-
-// Abstracted File System Functions
 bool modemFileOpen(const String& filename, int mode);
 bool modemFileWrite(const String& data);
 bool modemFileRead(String& data, int length = 1024);
@@ -179,49 +157,29 @@ bool modemFileExists(const String& filename);
 int modemFileSize(const String& filename);
 String modemFileList();
 bool checkModemReady();
-
-// Global configuration variable
-extern ModemConfig deviceConfig;
-
 void blinkLED(int times, int delayon, int delayoff, bool green);
 bool saveConfigToModem(const ModemConfig& config);
 bool loadConfigFromModem(ModemConfig& config);
 void printConfig(const ModemConfig& config);
 void LoadDeviceConfig();
-
 void displaySensorDataSummary();
-
-// ESP communication functions
 bool initializeESPSerial();
 void powerupESP();
 void powerdownESP();
 bool sendCommandToESP(const String& command);
 bool readESPResponse(String& response, unsigned long timeout = 5000);
 void ScanForWiFiNetworks();
-
-// ESP response parsing functions
 bool parseESPResponse(const String& rawResponse, String& filteredResponse, bool& hasOK);
 bool sendESPCommandAndGetResponse(const String& command, String& response, unsigned long timeout);
-
-// WiFi scan data parser
 String parseCWLAPData(const String& cwlapResponse);
-
 bool sendLargeJsonData(HttpClient& http, const DynamicJsonDocument& doc, const String& endpoint);
 void optimizeScanData(DynamicJsonDocument& doc, size_t maxSize);
-
-// HTTP response parsing functions
 bool parseServerResponse(const String& response, JsonDocument& doc);
 String readCompleteHttpResponse(HttpClient& http, unsigned long timeout);
-
-// Non-blocking wait functions
 bool waitForNextTransmission(unsigned long interval);
 void performBackgroundTasks();
-
-// Motion detection functions
 bool isMotionDetected();
 void triggerMotionTransmission();
-
-// Power management functions
 bool shouldKeepModemPowered();
 void logPowerManagementStatus();
 void checkAllInterruptFlags();
